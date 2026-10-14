@@ -887,7 +887,9 @@ export function createEditor(
         const currentSvg = svg;
         const blocks = [...currentSvg.querySelectorAll('.legend-block')] as SVGGElement[];
         // Display slot of the dragged curve (blocks are rendered front-most first).
-        const index = blocks.findIndex((b) => Number(b.getAttribute('data-curve-index')) === curveIndex);
+        const index = blocks.findIndex(
+            (b) => Number(b.getAttribute('data-curve-index')) === curveIndex
+        );
         const dragged = blocks[index];
         if (dragged === undefined) return;
         // Only the row being dragged keeps its hover affordances; others stop reacting mid-drag.

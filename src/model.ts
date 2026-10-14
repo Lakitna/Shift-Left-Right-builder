@@ -345,7 +345,12 @@ export function canRemovePoint(curve: Curve): boolean {
  * spline midpoint an insert handle sits on); without it, y is interpolated linearly from the
  * neighbouring points.
  */
-export function insertPoint(model: GraphModel, curveIndex: number, atX: number, atY?: number): boolean {
+export function insertPoint(
+    model: GraphModel,
+    curveIndex: number,
+    atX: number,
+    atY?: number
+): boolean {
     const curve = model.curves[curveIndex];
     if (curve === undefined || !canAddPoint(curve)) return false;
     const x = clampCoord(atX);

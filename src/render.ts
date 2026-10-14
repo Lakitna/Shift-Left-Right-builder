@@ -9,7 +9,7 @@
  * exported so the editor can place control-point handles and hit-test without duplicating math.
  */
 
-import { phasePositions, MAX_CURVES, type Curve, type CurvePoint, type GraphModel } from './model';
+import { MAX_CURVES, phasePositions, type Curve, type CurvePoint, type GraphModel } from './model';
 import { STYLE, type CanvasPalette, type FontRole, type GraphStyle } from './style';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -741,7 +741,9 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
             svgEl('rect', {
                 x: round(geom.legendX),
                 y: round(row.top),
-                width: round(L.legendRemoveZone + L.legendSwatch + L.legendSwatchGap + geom.legendWidth),
+                width: round(
+                    L.legendRemoveZone + L.legendSwatch + L.legendSwatchGap + geom.legendWidth
+                ),
                 height: round(rowHeight),
                 fill: 'transparent',
                 'pointer-events': 'all',
