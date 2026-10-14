@@ -38,14 +38,13 @@ export function buildSvgString(
     model: GraphModel,
     options: { dark: boolean; transparent: boolean }
 ): string {
-    return serializeSvg(
-        renderGraphSvg(model, {
-            style: STYLE,
-            dark: options.dark,
-            attribution: true,
-            transparentBackground: options.transparent,
-        })
-    );
+    const { svg } = renderGraphSvg(model, {
+        style: STYLE,
+        dark: options.dark,
+        attribution: true,
+        transparentBackground: options.transparent,
+    });
+    return serializeSvg(svg);
 }
 
 export function exportSvg(model: GraphModel, options: SvgExportOptions): void {
@@ -62,14 +61,13 @@ interface PngSheet {
 }
 
 function buildPngSheet(model: GraphModel, dark: boolean, transparent: boolean): PngSheet {
-    const svg = renderGraphSvg(model, {
+    const { svg, geom } = renderGraphSvg(model, {
         style: STYLE,
         dark,
         attribution: true,
         transparentBackground: transparent,
     });
-    const viewBox = svg.viewBox.baseVal;
-    return { svgString: serializeSvg(svg), width: viewBox.width, height: viewBox.height };
+    return { svgString: serializeSvg(svg), width: geom.width, height: geom.height };
 }
 
 async function rasterizeSheet(
@@ -112,7 +110,7 @@ export async function exportPng(model: GraphModel, options: PngExportOptions): P
     triggerDownload(URL.createObjectURL(blob), options.filename);
 }
 
-/** Sheet size in pixels at scale 1 — viewBox only, no rasterization. */
+/** Sheet size in pixels at scale 1 — layout only, no SVG build or rasterization. */
 export function measurePngSheet(
     model: GraphModel,
     options: { dark: boolean; transparent: boolean }

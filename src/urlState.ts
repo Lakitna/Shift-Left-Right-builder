@@ -6,9 +6,11 @@
  * Wire format (version 1) is compact but still readable JSON:
  * - phases are plain strings ("Pre-merge"), not {label} objects;
  * - curve points are [x, y] tuples, not {x, y} objects;
- * - fields at their default are omitted: empty title/yAxisTitle/notes, numericAxis=false,
- *   smooth=true, opacity=DEFAULT_OPACITY.
- * The in-memory model keeps its explicit object shape; only this encoding is compact.
+ * - fields at their default are omitted: empty notes, numericAxis=false, smooth=true,
+ *   opacity=DEFAULT_OPACITY.
+ * `title` and `yAxisTitle` are always written (as "" when unset) so the decoded model satisfies
+ * the strict shape `parseModel` requires. The in-memory model keeps its explicit object shape;
+ * only this encoding is compact.
  */
 
 import {
@@ -32,16 +34,19 @@ interface WireCurve {
 
 interface WireModel {
     version: number;
-    title?: string;
-    yAxisTitle?: string;
+    title: string;
+    yAxisTitle: string;
     numericAxis?: boolean;
     phases: string[];
     curves: WireCurve[];
 }
 
 function toWire(model: GraphModel): WireModel {
-    const wire: WireModel = {
+    return {
         version: MODEL_VERSION,
+        title: model.title ?? '',
+        yAxisTitle: model.yAxisTitle ?? '',
+        ...(model.numericAxis ? { numericAxis: true } : {}),
         phases: model.phases.map((phase) => phase.label),
         curves: model.curves.map((curve) => {
             const entry: WireCurve = {
@@ -55,18 +60,14 @@ function toWire(model: GraphModel): WireModel {
             return entry;
         }),
     };
-    if ((model.title ?? '') !== '') wire.title = model.title;
-    if ((model.yAxisTitle ?? '') !== '') wire.yAxisTitle = model.yAxisTitle;
-    if (model.numericAxis) wire.numericAxis = true;
-    return wire;
 }
 
 /** Expand the compact wire shape into the explicit object shape parseModel validates. */
 function fromWire(wire: WireModel): unknown {
     return {
         version: wire.version,
-        title: wire.title ?? '',
-        yAxisTitle: wire.yAxisTitle ?? '',
+        title: wire.title,
+        yAxisTitle: wire.yAxisTitle,
         numericAxis: wire.numericAxis === true,
         phases: wire.phases.map((label) => ({ label })),
         curves: wire.curves.map((curve) => ({
@@ -80,28 +81,35 @@ function fromWire(wire: WireModel): unknown {
     };
 }
 
+/**
+ * Bytes → latin1 string in fixed chunks. A single `String.fromCharCode(...bytes)` spread would
+ * hit the engine's argument-count limit on large models, so the conversion is chunked.
+ */
+function toBinary(bytes: Uint8Array): string {
+    let binary = '';
+    const CHUNK = 8192;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return binary;
+}
+
 /** Encode a model as URL-safe base64 of its compact wire JSON (UTF-8 safe). */
 export function encodeModel(model: GraphModel): string {
     const json = JSON.stringify(toWire(model));
-    const bytes = new TextEncoder().encode(json);
-    let binary = '';
-    for (const byte of bytes) {
-        binary += String.fromCharCode(byte);
-    }
-    return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+    return btoa(toBinary(new TextEncoder().encode(json)))
+        .replaceAll('+', '-')
+        .replaceAll('/', '_')
+        .replaceAll('=', '');
 }
 
 /** Decode a base64url string back into a validated model, or null when invalid. */
 export function decodeModel(encoded: string): GraphModel | null {
     try {
         let base64 = encoded.replaceAll('-', '+').replaceAll('_', '/');
-        while (base64.length % 4 !== 0) {
-            base64 += '=';
-        }
-        const binary = atob(base64);
-        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-        const json = new TextDecoder().decode(bytes);
-        const parsed = JSON.parse(json) as { version?: unknown } | null;
+        base64 += '='.repeat((4 - (base64.length % 4)) % 4);
+        const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+        const parsed = JSON.parse(new TextDecoder().decode(bytes)) as { version?: unknown } | null;
         if (typeof parsed !== 'object' || parsed === null || parsed.version !== MODEL_VERSION) {
             return null;
         }

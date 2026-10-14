@@ -11,8 +11,7 @@
 
 import { MAX_CURVES, phasePositions, type Curve, type CurvePoint, type GraphModel } from './model';
 import { STYLE, type CanvasPalette, type FontRole, type GraphStyle } from './style';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
+import { removeBadge, SVG_NS, svgEl, textEl } from './dom';
 
 export interface RenderOptions {
     style?: GraphStyle;
@@ -297,35 +296,29 @@ function peakPoint(curve: Curve): CurvePoint | null {
 
 // --- SVG assembly ------------------------------------------------------------
 
-function svgEl<Tag extends keyof SVGElementTagNameMap>(
-    tag: Tag,
-    attrs: Record<string, string | number>
-): SVGElementTagNameMap[Tag] {
-    const element = document.createElementNS(SVG_NS, tag);
-    for (const [name, value] of Object.entries(attrs)) {
-        element.setAttribute(name, String(value));
-    }
-    return element;
-}
-
-function textEl(content: string, attrs: Record<string, string | number>): SVGTextElement {
-    const element = svgEl('text', attrs);
-    element.textContent = content;
-    return element;
-}
-
-/** Bare dashed hint line for empty fields inside an already-clickable group. */
-function dashedHintLine(x1: number, x2: number, y: number, palette: CanvasPalette): SVGLineElement {
+/** A dashed rule used as the "click to edit" placeholder for an empty field. */
+function hintLine(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    palette: CanvasPalette
+): SVGLineElement {
     return svgEl('line', {
         x1: round(x1),
-        y1: round(y),
+        y1: round(y1),
         x2: round(x2),
-        y2: round(y),
+        y2: round(y2),
         stroke: palette.tickLabel,
         'stroke-width': 1.5,
         'stroke-dasharray': '5 4',
         'pointer-events': 'none',
     });
+}
+
+/** Bare dashed horizontal hint line for empty fields inside an already-clickable group. */
+function dashedHintLine(x1: number, x2: number, y: number, palette: CanvasPalette): SVGLineElement {
+    return hintLine(x1, y, x2, y, palette);
 }
 
 /**
@@ -351,22 +344,17 @@ function hintPlaceholder(
             'pointer-events': 'all',
         })
     );
-    group.appendChild(
-        svgEl('line', {
-            x1: round(cx - halfWidth),
-            y1: round(y),
-            x2: round(cx + halfWidth),
-            y2: round(y),
-            stroke: palette.tickLabel,
-            'stroke-width': 1.5,
-            'stroke-dasharray': '5 4',
-            'pointer-events': 'none',
-        })
-    );
+    group.appendChild(hintLine(cx - halfWidth, y, cx + halfWidth, y, palette));
     return group;
 }
 
-export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSVGElement {
+export interface RenderResult {
+    svg: SVGSVGElement;
+    /** The layout the SVG was built with — the editor reuses it for handles and hit-testing. */
+    geom: GraphGeom;
+}
+
+export function renderGraphSvg(model: GraphModel, options: RenderOptions): RenderResult {
     const geom = computeLayout(model, options);
     const { style, palette } = geom;
     const L = style.layout;
@@ -423,6 +411,30 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
     // baseline, tick and phase labels, y-axis title) paints *above* them.
     const grid = svgEl('g', { class: 'grid' });
     const axes = svgEl('g', { class: 'axes' });
+    // --- Axes ---------------------------------------------------------------
+
+    const axisStroke = { stroke: palette.axis, 'stroke-width': 2 };
+
+    /** A line ending in a triangular arrowhead pointing along (dx, dy) — one of the unit dirs. */
+    function arrowedAxis(x1: number, y1: number, x2: number, y2: number): void {
+        axes.appendChild(svgEl('line', { x1: round(x1), y1: round(y1), x2, y2, ...axisStroke }));
+        // Arrowhead: tip 10px beyond the line end, base ±5px perpendicular.
+        const dx = Math.sign(x2 - x1);
+        const dy = Math.sign(y2 - y1);
+        const tipX = x2 + dx * 10;
+        const tipY = y2 + dy * 10;
+        const px = -dy; // perpendicular
+        const py = dx;
+        axes.appendChild(
+            svgEl('polygon', {
+                points: `${round(x2 + px * 5)},${round(y2 + py * 5)} ${round(tipX)},${round(
+                    tipY
+                )} ${round(x2 - px * 5)},${round(y2 - py * 5)}`,
+                fill: palette.axis,
+            })
+        );
+    }
+
     if (model.numericAxis) {
         for (const value of [0, 25, 50, 75, 100]) {
             const py = geom.toPx(0, value).y;
@@ -449,58 +461,19 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
                 })
             );
         }
-        // Y axis line
+        // Y axis line (no arrowhead in numeric mode)
         axes.appendChild(
             svgEl('line', {
                 x1: round(geom.plotX0),
                 y1: round(geom.plotY0),
                 x2: round(geom.plotX0),
                 y2: round(geom.baselineY),
-                stroke: palette.axis,
-                'stroke-width': 2,
+                ...axisStroke,
             })
         );
     } else {
-        // X axis with arrowhead
-        axes.appendChild(
-            svgEl('line', {
-                x1: round(geom.plotX0),
-                y1: round(geom.baselineY),
-                x2: round(geom.plotX1 + 10),
-                y2: round(geom.baselineY),
-                stroke: palette.axis,
-                'stroke-width': 2,
-            })
-        );
-        axes.appendChild(
-            svgEl('polygon', {
-                points: `${round(geom.plotX1 + 10)},${round(geom.baselineY - 5)} ${round(
-                    geom.plotX1 + 20
-                )},${round(geom.baselineY)} ${round(geom.plotX1 + 10)},${round(
-                    geom.baselineY + 5
-                )}`,
-                fill: palette.axis,
-            })
-        );
-        // Y axis with arrowhead
-        axes.appendChild(
-            svgEl('line', {
-                x1: round(geom.plotX0),
-                y1: round(geom.baselineY),
-                x2: round(geom.plotX0),
-                y2: round(geom.plotY0 - 10),
-                stroke: palette.axis,
-                'stroke-width': 2,
-            })
-        );
-        axes.appendChild(
-            svgEl('polygon', {
-                points: `${round(geom.plotX0 - 5)},${round(geom.plotY0 - 10)} ${round(
-                    geom.plotX0
-                )},${round(geom.plotY0 - 20)} ${round(geom.plotX0 + 5)},${round(geom.plotY0 - 10)}`,
-                fill: palette.axis,
-            })
-        );
+        arrowedAxis(geom.plotX0, geom.baselineY, geom.plotX1 + 10, geom.baselineY);
+        arrowedAxis(geom.plotX0, geom.baselineY, geom.plotX0, geom.plotY0 - 10);
     }
 
     // Baseline (both modes)
@@ -510,8 +483,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
             y1: round(geom.baselineY),
             x2: round(geom.plotX1),
             y2: round(geom.baselineY),
-            stroke: palette.axis,
-            'stroke-width': 2,
+            ...axisStroke,
         })
     );
 
@@ -552,28 +524,12 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
             );
         }
         if (options.editing) {
-            const remove = svgEl('g', { class: 'phase-remove', 'data-phase-remove': index });
-            remove.appendChild(
-                svgEl('circle', {
-                    cx: round(px),
-                    cy: round(geom.phaseLabelY + 24),
-                    r: 9,
-                    fill: palette.background,
-                    stroke: palette.legendSwatchStroke,
-                    'stroke-width': 1,
+            group.appendChild(
+                removeBadge(px, geom.phaseLabelY + 24, 9, 11, 4, palette, {
+                    class: 'phase-remove',
+                    'data-phase-remove': index,
                 })
             );
-            remove.appendChild(
-                textEl('✕', {
-                    x: round(px),
-                    y: round(geom.phaseLabelY + 28),
-                    'text-anchor': 'middle',
-                    fill: palette.phaseLabel,
-                    'font-size': 11,
-                    'font-weight': 700,
-                })
-            );
-            group.appendChild(remove);
         }
         axes.appendChild(group);
     });
@@ -593,13 +549,13 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
     if (yTitle !== '') {
         axes.appendChild(
             textEl(yTitle, {
-                x: round(yTitleX),
+                x: yTitleX,
                 y: round(yTitleY),
                 'text-anchor': 'middle',
                 fill: palette.axisTitle,
                 'font-size': style.font.axisTitle.size,
                 'font-weight': style.font.axisTitle.weight,
-                transform: `rotate(-90 ${round(yTitleX)} ${round(yTitleY)})`,
+                transform: `rotate(-90 ${yTitleX} ${round(yTitleY)})`,
                 'data-edit-field': 'yaxis',
             })
         );
@@ -615,33 +571,25 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
             svgEl('rect', {
                 x: round(hintBaseline - (style.font.axisTitle.size + 6)),
                 y: round(yTitleY - 90),
-                width: round(style.font.axisTitle.size + 6 + 8),
+                width: round(style.font.axisTitle.size + 14),
                 height: 180,
                 fill: 'transparent',
                 'pointer-events': 'all',
             })
         );
-        hint.appendChild(
-            svgEl('line', {
-                x1: hintBaseline,
-                y1: round(yTitleY - 90),
-                x2: hintBaseline,
-                y2: round(yTitleY + 90),
-                stroke: palette.tickLabel,
-                'stroke-width': 1.5,
-                'stroke-dasharray': '5 4',
-                'pointer-events': 'none',
-            })
-        );
+        hint.appendChild(hintLine(hintBaseline, yTitleY - 90, hintBaseline, yTitleY + 90, palette));
         axes.appendChild(hint);
     }
 
     svg.appendChild(grid);
 
-    // Curves (fills + top lines), later curves paint on top so overlaps blend.
+    // Curves (fills + top lines), later curves paint on top so overlaps blend. Each curve group
+    // carries an invisible wide stroke over the top line so it is hoverable/clickable as a band.
+    const hitWidth = Math.max(14, style.curveStrokeWidth + 10);
     const curvesGroup = svgEl('g', { class: 'curves' });
     model.curves.forEach((curve, index) => {
         const group = svgEl('g', { 'data-curve-index': index });
+        const line = curveLinePath(curve, geom);
         group.appendChild(
             svgEl('path', {
                 d: curveAreaPath(curve, geom),
@@ -653,7 +601,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
         );
         group.appendChild(
             svgEl('path', {
-                d: curveLinePath(curve, geom),
+                d: line,
                 fill: 'none',
                 stroke: curve.color,
                 'stroke-width': style.curveStrokeWidth,
@@ -663,14 +611,12 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
                 'pointer-events': 'none',
             })
         );
-        // Invisible wide stroke over the top line: makes the curve hoverable/clickable as a band
-        // (and hover-highlightable) without painting anything.
         group.appendChild(
             svgEl('path', {
-                d: curveLinePath(curve, geom),
+                d: line,
                 fill: 'none',
                 stroke: 'transparent',
-                'stroke-width': Math.max(14, style.curveStrokeWidth + 10),
+                'stroke-width': hitWidth,
                 'stroke-linecap': 'round',
                 'stroke-linejoin': 'round',
                 class: 'curve-hit',
@@ -777,28 +723,12 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
             }
             block.appendChild(handle);
 
-            const remove = svgEl('g', { class: 'legend-remove', 'data-curve-remove': curveIndex });
-            remove.appendChild(
-                svgEl('circle', {
-                    cx: round(geom.legendX + 30),
-                    cy: round(rowMidY),
-                    r: 8,
-                    fill: palette.background,
-                    stroke: palette.legendSwatchStroke,
-                    'stroke-width': 1,
+            block.appendChild(
+                removeBadge(geom.legendX + 30, rowMidY, 8, 10, 4, palette, {
+                    class: 'legend-remove',
+                    'data-curve-remove': curveIndex,
                 })
             );
-            remove.appendChild(
-                textEl('✕', {
-                    x: round(geom.legendX + 30),
-                    y: round(rowMidY + 4),
-                    'text-anchor': 'middle',
-                    fill: palette.phaseLabel,
-                    'font-size': 10,
-                    'font-weight': 700,
-                })
-            );
-            block.appendChild(remove);
         }
         block.appendChild(
             svgEl('rect', {
@@ -886,7 +816,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
     if (options.attribution) {
         svg.appendChild(
             textEl('shift-left-right.builder', {
-                x: round(geom.width - style.layout.margin.right),
+                x: round(geom.width - L.margin.right),
                 y: round(geom.height - 6),
                 'text-anchor': 'end',
                 fill: palette.tickLabel,
@@ -895,7 +825,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): SVGSV
         );
     }
 
-    return svg;
+    return { svg, geom };
 }
 
 /** Serialize the SVG element into a standalone document string, optionally embedding font CSS. */

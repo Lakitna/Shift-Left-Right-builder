@@ -11,87 +11,48 @@ Lakitna
 
 import { createEditor, type GraphEditor } from './editor';
 import { buildSvgString, exportPng, exportSvg, measurePngSheet, renderPngPreview } from './export';
-import { cloneModel, parseModel, PRESETS, type GraphModel } from './model';
+import { collectDialogElements, createExportDialog, createPreviewRefresher } from './exportDialog';
+import { History } from './history';
+import { cloneModel, type GraphModel } from './model';
+import { PRESETS } from './presets';
+import {
+    clampPngWidth,
+    createPngSettingsStore,
+    createSvgSettingsStore,
+    PNG_DEFAULT_WIDTH,
+    type PngSettings,
+} from './settings';
 import { initTheme, isDarkMode, toggleTheme } from './theme';
+import { flashButton, mustFind } from './ui';
 import { readHash, writeStateToHash } from './urlState';
 
 initTheme();
 
 const DEFAULT_MODEL = PRESETS[0];
 const URL_SYNC_DELAY_MS = 250;
-const HISTORY_LIMIT = 100;
 const INVALID_HASH_MESSAGE =
     'The model data in the URL is invalid or from an incompatible version. The default model was loaded instead.';
 
-function mustFind<T extends HTMLElement>(id: string): T {
-    const element = document.getElementById(id);
-    if (element === null) {
-        throw new Error(`Required element #${id} is missing from the page`);
-    }
-    return element as T;
-}
+// --- DOM ---------------------------------------------------------------------
 
 const canvas = mustFind<HTMLElement>('graph-container');
 const toolbarEl = mustFind<HTMLElement>('editor-toolbar');
 const warningBanner = mustFind<HTMLElement>('warning');
 const copyButton = mustFind<HTMLButtonElement>('btn-copy-link');
-const exportSvgButton = mustFind<HTMLButtonElement>('btn-export-svg');
-const exportPngButton = mustFind<HTMLButtonElement>('btn-export-png');
 const shareButton = mustFind<HTMLButtonElement>('btn-share');
 const shareMenu = mustFind<HTMLElement>('share-menu');
 const themeButton = mustFind<HTMLButtonElement>('btn-theme');
-const pngDialog = mustFind<HTMLDialogElement>('png-dialog');
-const pngFilenameInput = mustFind<HTMLInputElement>('png-filename');
-const pngThemeLightRadio = mustFind<HTMLInputElement>('png-theme-light');
-const pngThemeDarkRadio = mustFind<HTMLInputElement>('png-theme-dark');
-const pngTransparentInput = mustFind<HTMLInputElement>('png-transparent');
+
+const pngDialog = collectDialogElements('png');
+const svgDialog = collectDialogElements('svg');
 const pngWidthInput = mustFind<HTMLInputElement>('png-width');
 const pngSizeHint = mustFind<HTMLElement>('png-size-hint');
-const pngPreviewImg = mustFind<HTMLImageElement>('png-preview-img');
-const pngCancelButton = mustFind<HTMLButtonElement>('png-cancel');
-const pngDownloadButton = mustFind<HTMLButtonElement>('png-download');
-const svgDialog = mustFind<HTMLDialogElement>('svg-dialog');
-const svgFilenameInput = mustFind<HTMLInputElement>('svg-filename');
-const svgThemeLightRadio = mustFind<HTMLInputElement>('svg-theme-light');
-const svgThemeDarkRadio = mustFind<HTMLInputElement>('svg-theme-dark');
-const svgTransparentInput = mustFind<HTMLInputElement>('svg-transparent');
-const svgPreviewImg = mustFind<HTMLImageElement>('svg-preview-img');
-const svgCancelButton = mustFind<HTMLButtonElement>('svg-cancel');
-const svgDownloadButton = mustFind<HTMLButtonElement>('svg-download');
+
+// --- Model + history ---------------------------------------------------------
 
 let model: GraphModel;
 let warningMessage = '';
-let urlTimer: number | undefined;
-
-// --- Undo/redo history -------------------------------------------------------
-
-const history: string[] = [];
-let historyIndex = -1;
-
-function pushHistory(): void {
-    const snapshot = JSON.stringify(model);
-    if (history[historyIndex] === snapshot) return;
-    history.splice(historyIndex + 1);
-    history.push(snapshot);
-    if (history.length > HISTORY_LIMIT) history.shift();
-    historyIndex = history.length - 1;
-}
-
-function restoreHistory(index: number): void {
-    const parsed = parseModel(JSON.parse(history[index]));
-    if (parsed === null) return;
-    historyIndex = index;
-    model = parsed;
-    render();
-}
-
-function undo(): void {
-    if (historyIndex > 0) restoreHistory(historyIndex - 1);
-}
-
-function redo(): void {
-    if (historyIndex < history.length - 1) restoreHistory(historyIndex + 1);
-}
+const history = new History();
 
 // --- Editor ------------------------------------------------------------------
 
@@ -99,19 +60,27 @@ const editor: GraphEditor = createEditor(toolbarEl, canvas, {
     getModel: () => model,
     replaceModel: (next) => {
         model = next;
-        pushHistory();
+        history.push(model);
         render();
     },
     onCommit: () => {
-        pushHistory();
+        history.push(model);
         render();
     },
     onLive: () => syncUrl(),
-    undo,
-    redo,
-    canUndo: () => historyIndex > 0,
-    canRedo: () => historyIndex < history.length - 1,
+    undo: () => applyHistoryStep(-1),
+    redo: () => applyHistoryStep(1),
+    canUndo: () => history.canUndo(),
+    canRedo: () => history.canRedo(),
 });
+
+function applyHistoryStep(offset: -1 | 1): void {
+    const restored = history.step(offset);
+    if (restored !== null) {
+        model = restored;
+        render();
+    }
+}
 
 function showWarning(message: string): void {
     warningMessage = message;
@@ -119,22 +88,29 @@ function showWarning(message: string): void {
     warningBanner.textContent = message;
 }
 
-function syncUrl(): void {
+// --- URL sync ----------------------------------------------------------------
+
+let urlTimer: number | undefined;
+
+function cancelUrlSync(): void {
     if (urlTimer !== undefined) {
         window.clearTimeout(urlTimer);
         urlTimer = undefined;
     }
+}
+
+/** Debounced hash update (used during live drags). */
+function syncUrl(): void {
+    cancelUrlSync();
     urlTimer = window.setTimeout(() => {
         urlTimer = undefined;
         writeStateToHash(model);
     }, URL_SYNC_DELAY_MS);
 }
 
+/** Immediate hash update (used before copying the link). */
 function syncUrlNow(): void {
-    if (urlTimer !== undefined) {
-        window.clearTimeout(urlTimer);
-        urlTimer = undefined;
-    }
+    cancelUrlSync();
     writeStateToHash(model);
 }
 
@@ -161,7 +137,7 @@ themeButton.addEventListener('click', () => {
 // --- Keyboard ----------------------------------------------------------------
 
 window.addEventListener('keydown', (event) => {
-    if (pngDialog.open || svgDialog.open) return;
+    if (pngDialog.dialog.open || svgDialog.dialog.open) return;
     const target = event.target as HTMLElement | null;
     const typing =
         target !== null &&
@@ -172,30 +148,25 @@ window.addEventListener('keydown', (event) => {
     const key = event.key.toLowerCase();
     if ((event.ctrlKey || event.metaKey) && key === 'z') {
         event.preventDefault();
-        if (event.shiftKey) redo();
-        else undo();
+        applyHistoryStep(event.shiftKey ? 1 : -1);
         return;
     }
     if ((event.ctrlKey || event.metaKey) && key === 'y') {
         event.preventDefault();
-        redo();
+        applyHistoryStep(1);
         return;
     }
     if (typing) return;
-    if (
-        event.key === 'ArrowLeft' ||
-        event.key === 'ArrowRight' ||
-        event.key === 'ArrowUp' ||
-        event.key === 'ArrowDown'
-    ) {
+    const arrowDelta: Record<string, [number, number]> = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, 1],
+        ArrowDown: [0, -1],
+    };
+    const delta = arrowDelta[event.key];
+    if (delta !== undefined) {
         const step = event.shiftKey ? 5 : 1;
-        let dx = 0;
-        let dy = 0;
-        if (event.key === 'ArrowLeft') dx = -step;
-        else if (event.key === 'ArrowRight') dx = step;
-        else if (event.key === 'ArrowUp') dy = step;
-        else dy = -step;
-        if (editor.nudge(dx, dy)) event.preventDefault();
+        if (editor.nudge(delta[0] * step, delta[1] * step)) event.preventDefault();
         return;
     }
     if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -224,16 +195,6 @@ document.addEventListener('pointerdown', (event) => {
     if (!shareMenu.hidden && !inside) setShareMenuOpen(false);
 });
 
-function flashButton(button: HTMLButtonElement, message: string): void {
-    const original = button.textContent;
-    button.textContent = message;
-    button.disabled = true;
-    window.setTimeout(() => {
-        button.textContent = original;
-        button.disabled = false;
-    }, 1200);
-}
-
 async function copyLink(): Promise<void> {
     syncUrlNow();
     try {
@@ -250,90 +211,29 @@ copyButton.addEventListener('click', () => {
 
 // --- Export dialogs ----------------------------------------------------------
 
-function normalizeFilename(raw: string, fallback: string, extension: string): string {
-    const cleaned = raw.trim().replace(/[\\/:*?"<>|]/g, '');
-    if (cleaned === '') return fallback;
-    const suffix = `.${extension}`;
-    return cleaned.toLowerCase().endsWith(suffix) ? cleaned : cleaned + suffix;
-}
-
-function closeOnBackdrop(dialog: HTMLDialogElement): void {
-    dialog.addEventListener('click', (event) => {
-        if (event.target === dialog) dialog.close();
-    });
-}
-
 const PNG_SETTINGS_KEY = 'shift-left-right-png-export';
-const PNG_MIN_WIDTH = 120;
-const PNG_MAX_WIDTH = 8000;
-const PNG_DEFAULT_WIDTH = 1500;
+const SVG_SETTINGS_KEY = 'shift-left-right-svg-export';
 
-interface PngSettings {
-    filename: string;
-    width: number;
-    transparent: boolean;
-    theme: 'light' | 'dark';
-}
+const pngStore = createPngSettingsStore(PNG_SETTINGS_KEY, () => ({
+    filename: 'shift-left-right.png',
+    width: PNG_DEFAULT_WIDTH,
+    transparent: false,
+    theme: isDarkMode() ? 'dark' : 'light',
+}));
 
-function clampPngWidth(value: number): number {
-    if (!Number.isFinite(value)) return PNG_DEFAULT_WIDTH;
-    return Math.min(PNG_MAX_WIDTH, Math.max(PNG_MIN_WIDTH, Math.round(value)));
-}
+const svgStore = createSvgSettingsStore(SVG_SETTINGS_KEY, () => ({
+    filename: 'shift-left-right.svg',
+    transparent: false,
+    theme: isDarkMode() ? 'dark' : 'light',
+}));
 
-function defaultPngSettings(): PngSettings {
-    return {
-        filename: 'shift-left-right.png',
-        width: PNG_DEFAULT_WIDTH,
-        transparent: false,
-        theme: isDarkMode() ? 'dark' : 'light',
-    };
-}
-
-function readPngSettings(): PngSettings {
-    const fallback = defaultPngSettings();
-    try {
-        const raw = window.localStorage.getItem(PNG_SETTINGS_KEY);
-        if (raw === null) return fallback;
-        const stored = JSON.parse(raw) as Partial<PngSettings>;
-        return {
-            filename:
-                typeof stored.filename === 'string' && stored.filename.trim() !== ''
-                    ? stored.filename
-                    : fallback.filename,
-            width:
-                typeof stored.width === 'number' &&
-                stored.width >= PNG_MIN_WIDTH &&
-                stored.width <= PNG_MAX_WIDTH
-                    ? clampPngWidth(stored.width)
-                    : fallback.width,
-            transparent: stored.transparent === true,
-            theme:
-                stored.theme === 'dark' || stored.theme === 'light' ? stored.theme : fallback.theme,
-        };
-    } catch {
-        return fallback;
-    }
-}
-
-function writePngSettings(settings: PngSettings): void {
-    try {
-        window.localStorage.setItem(PNG_SETTINGS_KEY, JSON.stringify(settings));
-    } catch {
-        // Private mode or quota — the dialog still works, just forgetful.
-    }
-}
-
-let pngSettings = readPngSettings();
+// --- PNG ---------------------------------------------------------------------
 
 function currentPngSheet(): { width: number; height: number } {
     return measurePngSheet(model, {
-        dark: pngThemeDarkRadio.checked,
-        transparent: pngTransparentInput.checked,
+        dark: pngDialog.themeDarkRadio.checked,
+        transparent: pngDialog.transparentInput.checked,
     });
-}
-
-function pngExportScale(width: number): number {
-    return Math.min(10, Math.max(0.1, width / currentPngSheet().width));
 }
 
 function updatePngSizeHint(): void {
@@ -343,186 +243,99 @@ function updatePngSizeHint(): void {
     pngSizeHint.textContent = `Exports at about ${width} × ${height} px`;
 }
 
-let previewTimer: number | undefined;
-let previewToken = 0;
-
-function schedulePngPreview(): void {
-    window.clearTimeout(previewTimer);
-    previewTimer = window.setTimeout(() => void updatePngPreview(), 150);
-}
-
-async function updatePngPreview(): Promise<void> {
-    const token = ++previewToken;
-    const dark = pngThemeDarkRadio.checked;
-    const transparent = pngTransparentInput.checked;
-    try {
-        const blob = await renderPngPreview(model, { dark, transparent });
-        if (token !== previewToken || !pngDialog.open) return;
-        const url = URL.createObjectURL(blob);
-        if (pngPreviewImg.dataset.url !== undefined) URL.revokeObjectURL(pngPreviewImg.dataset.url);
-        pngPreviewImg.dataset.url = url;
-        pngPreviewImg.src = url;
-        pngPreviewImg.hidden = false;
-    } catch {
-        if (token === previewToken) {
-            pngSizeHint.textContent = 'Preview unavailable — the download will still be attempted.';
-        }
-    }
-}
-
-function applyPngSettingsToUi(): void {
-    pngFilenameInput.value = pngSettings.filename;
-    pngWidthInput.value = String(pngSettings.width);
-    pngTransparentInput.checked = pngSettings.transparent;
-    (pngSettings.theme === 'dark' ? pngThemeDarkRadio : pngThemeLightRadio).checked = true;
-}
-
-function openPngDialog(): void {
-    applyPngSettingsToUi();
-    pngDialog.showModal();
-    pngFilenameInput.focus();
-    pngFilenameInput.select();
-    updatePngSizeHint();
-    schedulePngPreview();
-}
-
-exportPngButton.addEventListener('click', () => {
-    setShareMenuOpen(false);
-    openPngDialog();
-});
-
-pngCancelButton.addEventListener('click', () => pngDialog.close());
-closeOnBackdrop(pngDialog);
-for (const control of [pngTransparentInput, pngThemeLightRadio, pngThemeDarkRadio]) {
-    control.addEventListener('change', () => schedulePngPreview());
-}
-pngWidthInput.addEventListener('input', updatePngSizeHint);
-pngDownloadButton.addEventListener('click', () => {
-    const settings: PngSettings = {
-        filename: normalizeFilename(pngFilenameInput.value, 'shift-left-right.png', 'png'),
+const pngPreview = createExportDialog<PngSettings>(pngDialog, {
+    extension: 'png',
+    fallbackFilename: 'shift-left-right.png',
+    loadSettings: () => pngStore.read(),
+    saveSettings: (settings) => pngStore.write(settings),
+    readCommon: (current, common) => ({
+        ...current,
+        ...common,
         width: clampPngWidth(Number(pngWidthInput.value)),
-        transparent: pngTransparentInput.checked,
-        theme: pngThemeDarkRadio.checked ? 'dark' : 'light',
-    };
-    pngSettings = settings;
-    writePngSettings(settings);
-    const scale = pngExportScale(settings.width);
-    pngDialog.close();
-    exportPng(model, {
-        filename: settings.filename,
-        dark: settings.theme === 'dark',
-        scale,
-        transparent: settings.transparent,
-    }).catch((error: unknown) => {
-        showWarning(`PNG export failed: ${String(error)}`);
-    });
-});
-
-const SVG_SETTINGS_KEY = 'shift-left-right-svg-export';
-
-interface SvgSettings {
-    filename: string;
-    transparent: boolean;
-    theme: 'light' | 'dark';
-}
-
-function defaultSvgSettings(): SvgSettings {
-    return {
-        filename: 'shift-left-right.svg',
-        transparent: false,
-        theme: isDarkMode() ? 'dark' : 'light',
-    };
-}
-
-function readSvgSettings(): SvgSettings {
-    const fallback = defaultSvgSettings();
-    try {
-        const raw = window.localStorage.getItem(SVG_SETTINGS_KEY);
-        if (raw === null) return fallback;
-        const stored = JSON.parse(raw) as Partial<SvgSettings>;
-        return {
-            filename:
-                typeof stored.filename === 'string' && stored.filename.trim() !== ''
-                    ? stored.filename
-                    : fallback.filename,
-            transparent: stored.transparent === true,
-            theme:
-                stored.theme === 'dark' || stored.theme === 'light' ? stored.theme : fallback.theme,
-        };
-    } catch {
-        return fallback;
-    }
-}
-
-function writeSvgSettings(settings: SvgSettings): void {
-    try {
-        window.localStorage.setItem(SVG_SETTINGS_KEY, JSON.stringify(settings));
-    } catch {
-        // Private mode or quota — the dialog still works, just forgetful.
-    }
-}
-
-let svgSettings = readSvgSettings();
-let svgPreviewToken = 0;
-
-async function updateSvgPreview(): Promise<void> {
-    const token = ++svgPreviewToken;
-    try {
-        const svgString = buildSvgString(model, {
-            dark: svgThemeDarkRadio.checked,
-            transparent: svgTransparentInput.checked,
-        });
-        if (token !== svgPreviewToken || !svgDialog.open) return;
-        const url = URL.createObjectURL(
-            new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
-        );
-        if (svgPreviewImg.dataset.url !== undefined) URL.revokeObjectURL(svgPreviewImg.dataset.url);
-        svgPreviewImg.dataset.url = url;
-        svgPreviewImg.src = url;
-        svgPreviewImg.hidden = false;
-    } catch {
-        if (token === svgPreviewToken) svgPreviewImg.hidden = true;
-    }
-}
-
-function openSvgDialog(): void {
-    svgFilenameInput.value = svgSettings.filename;
-    svgTransparentInput.checked = svgSettings.transparent;
-    (svgSettings.theme === 'dark' ? svgThemeDarkRadio : svgThemeLightRadio).checked = true;
-    svgDialog.showModal();
-    svgFilenameInput.focus();
-    svgFilenameInput.select();
-    void updateSvgPreview();
-}
-
-exportSvgButton.addEventListener('click', () => {
-    setShareMenuOpen(false);
-    openSvgDialog();
-});
-
-svgCancelButton.addEventListener('click', () => svgDialog.close());
-closeOnBackdrop(svgDialog);
-for (const control of [svgTransparentInput, svgThemeLightRadio, svgThemeDarkRadio]) {
-    control.addEventListener('change', () => void updateSvgPreview());
-}
-svgDownloadButton.addEventListener('click', () => {
-    const settings: SvgSettings = {
-        filename: normalizeFilename(svgFilenameInput.value, 'shift-left-right.svg', 'svg'),
-        transparent: svgTransparentInput.checked,
-        theme: svgThemeDarkRadio.checked ? 'dark' : 'light',
-    };
-    svgSettings = settings;
-    writeSvgSettings(settings);
-    svgDialog.close();
-    try {
-        exportSvg(model, {
+    }),
+    applyExtraSettings: (settings) => {
+        pngWidthInput.value = String(settings.width);
+    },
+    onOptionsChanged: refreshPngPreview,
+    onDownload: (settings) => {
+        const scale = Math.min(10, Math.max(0.1, settings.width / currentPngSheet().width));
+        exportPng(model, {
             filename: settings.filename,
             dark: settings.theme === 'dark',
+            scale,
             transparent: settings.transparent,
+        }).catch((error: unknown) => {
+            showWarning(`PNG export failed: ${String(error)}`);
         });
-    } catch (error: unknown) {
-        showWarning(`SVG export failed: ${String(error)}`);
-    }
+    },
+});
+
+/** Debounced rasterized preview; the refresher drops out-of-order and post-close results. */
+const pngRefresher = createPreviewRefresher(
+    pngPreview,
+    () =>
+        renderPngPreview(model, {
+            dark: pngDialog.themeDarkRadio.checked,
+            transparent: pngDialog.transparentInput.checked,
+        }),
+    () => {
+        pngSizeHint.textContent = 'Preview unavailable — the download will still be attempted.';
+    },
+    150
+);
+
+function refreshPngPreview(): void {
+    updatePngSizeHint();
+    pngRefresher.refresh();
+}
+
+pngWidthInput.addEventListener('input', updatePngSizeHint);
+mustFind<HTMLButtonElement>('btn-export-png').addEventListener('click', () => {
+    setShareMenuOpen(false);
+    pngPreview.show();
+});
+
+// --- SVG ---------------------------------------------------------------------
+
+const svgPreview = createExportDialog(svgDialog, {
+    extension: 'svg',
+    fallbackFilename: 'shift-left-right.svg',
+    loadSettings: () => svgStore.read(),
+    saveSettings: (settings) => svgStore.write(settings),
+    readCommon: (current, common) => ({ ...current, ...common }),
+    onOptionsChanged: refreshSvgPreview,
+    onDownload: (settings) => {
+        try {
+            exportSvg(model, {
+                filename: settings.filename,
+                dark: settings.theme === 'dark',
+                transparent: settings.transparent,
+            });
+        } catch (error: unknown) {
+            showWarning(`SVG export failed: ${String(error)}`);
+        }
+    },
+});
+
+const svgRefresher = createPreviewRefresher(
+    svgPreview,
+    async () => {
+        const svgString = buildSvgString(model, {
+            dark: svgDialog.themeDarkRadio.checked,
+            transparent: svgDialog.transparentInput.checked,
+        });
+        return new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    },
+    () => svgPreview.hidePreview()
+);
+
+function refreshSvgPreview(): void {
+    svgRefresher.refresh();
+}
+
+mustFind<HTMLButtonElement>('btn-export-svg').addEventListener('click', () => {
+    setShareMenuOpen(false);
+    svgPreview.show();
 });
 
 // --- Boot --------------------------------------------------------------------
@@ -532,16 +345,11 @@ function loadFromHash(): void {
     if (hash.model !== null) {
         model = hash.model;
         warningMessage = '';
-    } else if (hash.present) {
-        model = cloneModel(DEFAULT_MODEL.data);
-        warningMessage = INVALID_HASH_MESSAGE;
     } else {
         model = cloneModel(DEFAULT_MODEL.data);
-        warningMessage = '';
+        warningMessage = hash.present ? INVALID_HASH_MESSAGE : '';
     }
-    history.length = 0;
-    historyIndex = -1;
-    pushHistory();
+    history.reset(model);
     render();
 }
 

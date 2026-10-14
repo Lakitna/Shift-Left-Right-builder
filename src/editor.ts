@@ -17,6 +17,8 @@
  * commit (history + full re-render) or just sync the URL (live drag).
  */
 
+import { addBadge, svgEl } from './dom';
+import { startGesture } from './gesture';
 import {
     addCurve,
     addPhase,
@@ -26,23 +28,24 @@ import {
     clampCoord,
     clampOpacity,
     cloneModel,
+    DEFAULT_OPACITY,
     insertPoint,
     MAX_OPACITY,
     MIN_OPACITY,
     moveCurve,
     nearestPhaseX,
-    PRESETS,
     removeCurve,
     removePhase,
     removePoint,
     reorderCurve,
     reorderPhase,
     setPoint,
+    type Curve,
     type CurvePoint,
     type GraphModel,
 } from './model';
+import { PRESETS } from './presets';
 import {
-    computeLayout,
     curveAreaPath,
     curveLinePath,
     pointPx,
@@ -52,8 +55,8 @@ import {
 } from './render';
 import { STYLE } from './style';
 import { isDarkMode } from './theme';
+import { makeCheck, makeElement } from './ui';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 const ACCENT = { light: '#002fa7', dark: '#6c8cff' };
 
 export interface EditorHost {
@@ -78,24 +81,25 @@ export interface GraphEditor {
     nudge(dx: number, dy: number): boolean;
 }
 
-function svgEl<Tag extends keyof SVGElementTagNameMap>(
-    tag: Tag,
-    attrs: Record<string, string | number>
-): SVGElementTagNameMap[Tag] {
-    const element = document.createElementNS(SVG_NS, tag);
-    for (const [name, value] of Object.entries(attrs)) {
-        element.setAttribute(name, String(value));
-    }
-    return element;
+/**
+ * Selection is stored as a curve INDEX, but list mutations (remove, reorder) shift indices. These
+ * two pure helpers are the only place that arithmetic lives, so every mutation site stays a
+ * one-liner and the fixup rules cannot drift apart.
+ */
+
+/** The index `sel` takes after the item at `removed` leaves the list (null when it was removed). */
+function afterRemove(sel: number | null, removed: number): number | null {
+    if (sel === null || sel === removed) return null;
+    return sel > removed ? sel - 1 : sel;
 }
 
-/** Toolbar controls that do not apply are removed from view entirely, not left greyed out. */
-function hide(element: HTMLElement): void {
-    element.style.display = 'none';
-}
-
-function show(element: HTMLElement): void {
-    element.style.display = '';
+/** The index `sel` takes after the item at `from` is re-inserted at `to` (splice semantics). */
+function afterMove(sel: number | null, from: number, to: number): number | null {
+    if (sel === null) return null;
+    if (sel === from) return to;
+    if (from < to && sel > from && sel <= to) return sel - 1;
+    if (from > to && sel >= to && sel < from) return sel + 1;
+    return sel;
 }
 
 export function createEditor(
@@ -111,7 +115,20 @@ export function createEditor(
     let handlePoints: CurvePoint[] = [];
     let activeInline: { commit: () => void } | null = null;
 
-    const toolbar = buildToolbar();
+    /**
+     * The toolbar is data-driven. Each segment declares when it is visible; each control registers
+     * a `sync` closure that refreshes its enabled/checked/value state. `updateToolbar` just runs
+     * the registrations, so adding a control is a local change in `buildToolbar`.
+     */
+    const toolbarSegments: {
+        element: HTMLElement;
+        /** Divider rendered before this segment (null for the first); hides with it. */
+        divider: HTMLElement | null;
+        visible(): boolean;
+    }[] = [];
+    const toolbarSyncs: (() => void)[] = [];
+
+    buildToolbar();
 
     canvasEl.addEventListener('pointerdown', onPointerDown);
     canvasEl.addEventListener('dblclick', onDoubleClick);
@@ -126,25 +143,24 @@ export function createEditor(
 
     // --- Toolbar -------------------------------------------------------------
 
-    function buildToolbar() {
+    function buildToolbar(): void {
         toolbarEl.textContent = '';
         // Three segments separated by visual dividers: generic (always), curve (selection only),
         // graph (always). Within the curve segment, controls that cannot apply to the current
         // curve/selection are disabled rather than hidden, so nothing shifts.
-        const segment = (): HTMLElement => {
-            if (toolbarEl.childElementCount > 0) {
-                const divider = document.createElement('div');
-                divider.className = 'tool-divider';
+        const segment = (visible: () => boolean = () => true): HTMLElement => {
+            let divider: HTMLElement | null = null;
+            if (toolbarSegments.length > 0) {
+                divider = makeElement('div', 'tool-divider');
                 toolbarEl.appendChild(divider);
             }
-            const el = document.createElement('div');
-            el.className = 'tool-segment';
-            toolbarEl.appendChild(el);
-            return el;
+            const element = makeElement('div', 'tool-segment');
+            toolbarEl.appendChild(element);
+            toolbarSegments.push({ element, divider, visible });
+            return element;
         };
         const group = (parent: HTMLElement): HTMLElement => {
-            const el = document.createElement('div');
-            el.className = 'tool-group';
+            const el = makeElement('div', 'tool-group');
             parent.appendChild(el);
             return el;
         };
@@ -152,39 +168,94 @@ export function createEditor(
             parent: HTMLElement,
             label: string,
             title: string,
-            onClick: () => void
-        ): HTMLButtonElement => {
-            const b = document.createElement('button');
+            onClick: () => void,
+            enabled: () => boolean = () => true
+        ): void => {
+            const b = makeElement('button', { label, title, onClick });
             b.type = 'button';
-            b.textContent = label;
-            b.title = title;
-            b.addEventListener('click', onClick);
             parent.appendChild(b);
-            return b;
+            toolbarSyncs.push(() => (b.disabled = !enabled()));
         };
+        const check = (
+            parent: HTMLElement,
+            caption: string,
+            get: () => boolean,
+            set: (checked: boolean) => void,
+            enabled: () => boolean = () => true
+        ): void => {
+            const { label, input } = makeCheck(caption, set);
+            parent.appendChild(label);
+            toolbarSyncs.push(() => {
+                input.checked = get();
+                input.disabled = !enabled();
+            });
+        };
+        const range = (
+            parent: HTMLElement,
+            spec: {
+                caption: string;
+                title: string;
+                min: number;
+                max: number;
+                step: string;
+                get(): number;
+                setLive(value: number): void;
+                commit(): void;
+                enabled(): boolean;
+            }
+        ): void => {
+            const wrap = makeElement('label', 'tool-range');
+            const span = makeElement('span');
+            span.textContent = spec.caption;
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.min = String(spec.min);
+            input.max = String(spec.max);
+            input.step = spec.step;
+            input.title = spec.title;
+            input.addEventListener('input', () => spec.setLive(Number(input.value)));
+            input.addEventListener('change', spec.commit);
+            wrap.append(span, input);
+            parent.appendChild(wrap);
+            toolbarSyncs.push(() => {
+                input.value = String(spec.get());
+                input.disabled = !spec.enabled();
+            });
+        };
+
+        /** The selected curve, or undefined when nothing (or something stale) is picked. */
+        const selected = (): Curve | undefined =>
+            selectedCurve === null ? undefined : model().curves[selectedCurve];
 
         const segGeneric = segment();
         const gHistory = group(segGeneric);
-        const btnUndo = button(gHistory, '↶', 'Undo (Ctrl+Z)', () => host.undo());
-        const btnRedo = button(gHistory, '↷', 'Redo (Ctrl+Y)', () => host.redo());
+        button(
+            gHistory,
+            '↶',
+            'Undo (Ctrl+Z)',
+            () => host.undo(),
+            () => host.canUndo()
+        );
+        button(
+            gHistory,
+            '↷',
+            'Redo (Ctrl+Y)',
+            () => host.redo(),
+            () => host.canRedo()
+        );
 
+        // Preset picker: applying replaces the whole model. The selection is cleared BEFORE the
+        // replace — replaceModel renders immediately, and stale selection state would paint
+        // handles on the new model's first curve.
         const presetSelect = document.createElement('select');
         presetSelect.title = 'Apply a preset';
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = 'Preset…';
-        presetSelect.appendChild(placeholder);
-        PRESETS.forEach((preset, index) => {
-            const option = document.createElement('option');
-            option.value = String(index);
-            option.textContent = preset.name;
-            presetSelect.appendChild(option);
-        });
+        presetSelect.append(
+            makeElement('option', '', 'Preset…'),
+            ...PRESETS.map((preset, index) => makeElement('option', String(index), preset.name))
+        );
         presetSelect.addEventListener('change', () => {
             const value = presetSelect.value;
             if (value === '') return;
-            // Clear the selection BEFORE replacing the model — replaceModel renders immediately,
-            // and stale selection state would paint handles on the new model's first curve.
             selectedCurve = null;
             selectedPoint = null;
             host.replaceModel(cloneModel(PRESETS[Number(value)].data));
@@ -192,151 +263,112 @@ export function createEditor(
         });
         segGeneric.appendChild(presetSelect);
 
-        const segCurve = segment();
+        const segCurve = segment(() => selected() !== undefined);
         const gCurves = group(segCurve);
-        const btnDeleteCurve = button(gCurves, '🗑', 'Delete selected curve', () => {
-            if (selectedCurve !== null && removeCurve(model(), selectedCurve)) {
-                selectedCurve = null;
-                selectedPoint = null;
-                host.onCommit();
-            }
-        });
+        button(
+            gCurves,
+            '🗑',
+            'Delete selected curve',
+            () => {
+                if (selectedCurve !== null && removeCurve(model(), selectedCurve)) {
+                    selectedCurve = null;
+                    selectedPoint = null;
+                    host.onCommit();
+                }
+            },
+            () => selected() !== undefined && canRemoveCurve(model())
+        );
 
         const gStyle = group(segCurve);
-
-        const smoothWrap = document.createElement('label');
-        smoothWrap.className = 'tool-check';
-        const smoothInput = document.createElement('input');
-        smoothInput.type = 'checkbox';
-        const smoothSpan = document.createElement('span');
-        smoothSpan.textContent = 'Smooth';
-        smoothInput.addEventListener('change', () => {
-            if (selectedCurve !== null) {
-                const curve = model().curves[selectedCurve];
-                if (curve) {
-                    curve.smooth = smoothInput.checked;
+        check(
+            gStyle,
+            'Smooth',
+            () => selected()?.smooth ?? false,
+            (checked) => {
+                const curve = selected();
+                if (curve !== undefined) {
+                    curve.smooth = checked;
                     host.onCommit();
                 }
             }
+        );
+        range(gStyle, {
+            caption: 'Opacity',
+            title: 'Selected curve opacity',
+            min: MIN_OPACITY,
+            max: MAX_OPACITY,
+            step: '0.05',
+            get: () => selected()?.opacity ?? DEFAULT_OPACITY,
+            setLive: (value) => {
+                const curve = selected();
+                if (curve === undefined || selectedCurve === null) return;
+                curve.opacity = clampOpacity(value);
+                updateCurveOpacity(selectedCurve);
+                host.onLive();
+            },
+            commit: () => host.onCommit(),
+            enabled: () => selected() !== undefined,
         });
-        smoothWrap.append(smoothInput, smoothSpan);
-        gStyle.appendChild(smoothWrap);
-
-        const opacityWrap = document.createElement('label');
-        opacityWrap.className = 'tool-range';
-        const opacitySpan = document.createElement('span');
-        opacitySpan.textContent = 'Opacity';
-        const opacityInput = document.createElement('input');
-        opacityInput.type = 'range';
-        opacityInput.min = String(MIN_OPACITY);
-        opacityInput.max = String(MAX_OPACITY);
-        opacityInput.step = '0.05';
-        opacityInput.title = 'Selected curve opacity';
-        opacityInput.addEventListener('input', () => {
-            if (selectedCurve !== null) {
-                const curve = model().curves[selectedCurve];
-                if (curve) {
-                    curve.opacity = clampOpacity(Number(opacityInput.value));
-                    updateCurveOpacity(selectedCurve);
-                    host.onLive();
-                }
-            }
-        });
-        opacityInput.addEventListener('change', () => host.onCommit());
-        opacityWrap.append(opacitySpan, opacityInput);
-        gStyle.appendChild(opacityWrap);
 
         const gOrder = group(segCurve);
-        const btnBack = button(gOrder, '⟨', 'Send curve backward', () => {
-            if (selectedCurve !== null && moveCurve(model(), selectedCurve, -1)) {
-                selectedCurve -= 1; // follow the moved curve so selection stays on it
-                host.onCommit();
-            }
-        });
-        const btnForward = button(gOrder, '⟩', 'Bring curve forward', () => {
-            if (selectedCurve !== null && moveCurve(model(), selectedCurve, 1)) {
-                selectedCurve += 1;
-                host.onCommit();
-            }
-        });
+        button(
+            gOrder,
+            '⟨',
+            'Send curve backward',
+            () => {
+                if (selectedCurve !== null && moveCurve(model(), selectedCurve, -1)) {
+                    // Follow the moved curve so the selection stays on it.
+                    selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve - 1);
+                    host.onCommit();
+                }
+            },
+            () => selectedCurve !== null && selectedCurve > 0
+        );
+        button(
+            gOrder,
+            '⟩',
+            'Bring curve forward',
+            () => {
+                if (selectedCurve !== null && moveCurve(model(), selectedCurve, 1)) {
+                    selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve + 1);
+                    host.onCommit();
+                }
+            },
+            () => selectedCurve !== null && selectedCurve < model().curves.length - 1
+        );
 
         const segGraph = segment();
         const gToggles = group(segGraph);
-
-        const snapWrap = document.createElement('label');
-        snapWrap.className = 'tool-check';
-        const snapInput = document.createElement('input');
-        snapInput.type = 'checkbox';
-        const snapSpan = document.createElement('span');
-        snapSpan.textContent = 'Snap to phases';
-        snapInput.addEventListener('change', () => {
-            snapEnabled = snapInput.checked;
-        });
-        snapWrap.append(snapInput, snapSpan);
-        gToggles.appendChild(snapWrap);
-
-        const numericWrap = document.createElement('label');
-        numericWrap.className = 'tool-check';
-        const numericInput = document.createElement('input');
-        numericInput.type = 'checkbox';
-        const numericSpan = document.createElement('span');
-        numericSpan.textContent = 'Numeric axis';
-        numericInput.addEventListener('change', () => {
-            model().numericAxis = numericInput.checked;
-            host.onCommit();
-        });
-        numericWrap.append(numericInput, numericSpan);
-        gToggles.appendChild(numericWrap);
-
-        // The second divider (curve | graph) only belongs to the layout while the curve segment is
-        // visible; hiding it with the segment keeps a single divider when nothing is picked.
-        const allDividers = [...toolbarEl.querySelectorAll('.tool-divider')] as HTMLElement[];
-
-        return {
-            btnUndo,
-            btnRedo,
-            segCurve,
-            dividerAfterCurve: allDividers[1],
-            btnDeleteCurve,
-            smoothInput,
-            opacityInput,
-            btnBack,
-            btnForward,
-            snapInput,
-            numericInput,
-        };
+        check(
+            gToggles,
+            'Snap to phases',
+            () => snapEnabled,
+            (checked) => {
+                snapEnabled = checked;
+            }
+        );
+        check(
+            gToggles,
+            'Numeric axis',
+            () => model().numericAxis,
+            (checked) => {
+                model().numericAxis = checked;
+                host.onCommit();
+            }
+        );
     }
 
     function updateToolbar(): void {
-        const m = model();
-        toolbar.btnUndo.disabled = !host.canUndo();
-        toolbar.btnRedo.disabled = !host.canRedo();
-
-        // The curve segment appears only with a selection; inside it controls stay visible but
-        // disabled when they cannot apply (e.g. "backward" on the bottom curve), so nothing shifts.
-        const selected = selectedCurve !== null ? m.curves[selectedCurve] : undefined;
-        if (selected === undefined) {
-            hide(toolbar.segCurve);
-            hide(toolbar.dividerAfterCurve);
-        } else {
-            show(toolbar.segCurve);
-            show(toolbar.dividerAfterCurve);
+        for (const segment of toolbarSegments) {
+            const visible = segment.visible();
+            segment.element.style.display = visible ? '' : 'none';
+            // A hidden segment takes its leading divider with it, so the row never shows a
+            // dangling separator when the curve segment is collapsed.
+            if (segment.divider !== null) {
+                segment.divider.style.display = visible ? '' : 'none';
+            }
         }
-        toolbar.btnDeleteCurve.disabled = !(selected && canRemoveCurve(m));
-        if (selected) {
-            toolbar.smoothInput.checked = selected.smooth;
-            toolbar.opacityInput.value = String(selected.opacity);
-        }
-        toolbar.smoothInput.disabled = !selected;
-        toolbar.opacityInput.disabled = !selected;
-        toolbar.btnBack.disabled = !(selected && selectedCurve !== null && selectedCurve > 0);
-        toolbar.btnForward.disabled = !(
-            selected &&
-            selectedCurve !== null &&
-            selectedCurve < m.curves.length - 1
-        );
-        toolbar.snapInput.checked = snapEnabled;
-        toolbar.numericInput.checked = m.numericAxis;
+        for (const sync of toolbarSyncs) sync();
     }
 
     // --- Render --------------------------------------------------------------
@@ -348,8 +380,9 @@ export function createEditor(
             selectedPoint = null;
         }
         const dark = isDarkMode();
-        geom = computeLayout(m, { style: STYLE, dark, editing: true });
-        svg = renderGraphSvg(m, { style: STYLE, dark, editing: true });
+        const result = renderGraphSvg(m, { style: STYLE, dark, editing: true });
+        svg = result.svg;
+        geom = result.geom; // the editor reuses the layout the SVG was built with
         canvasEl.replaceChildren(svg);
         buildOverlay(m);
         updateToolbar();
@@ -402,34 +435,14 @@ export function createEditor(
                     const midX = Math.round(rawMid.x);
                     const midY = Math.round(rawMid.y);
                     const mid = g.toPx(midX, midY);
-                    const handle = svgEl('g', {
-                        class: 'insert-handle',
-                        'data-insert-x': midX,
-                        'data-insert-y': midY,
-                        'data-curve-index': selectedCurve,
-                    });
-                    handle.appendChild(
-                        svgEl('circle', {
-                            cx: mid.x,
-                            cy: mid.y,
-                            r: 9,
-                            fill: '#ffffff',
-                            stroke: acc,
-                            'stroke-width': 2,
+                    overlay.appendChild(
+                        addBadge(mid.x, mid.y, acc, {
+                            class: 'insert-handle',
+                            'data-insert-x': midX,
+                            'data-insert-y': midY,
+                            'data-curve-index': selectedCurve,
                         })
                     );
-                    const plus = svgEl('text', {
-                        x: mid.x,
-                        y: mid.y + 4,
-                        'text-anchor': 'middle',
-                        fill: acc,
-                        'font-size': 13,
-                        'font-weight': 700,
-                        'pointer-events': 'none',
-                    });
-                    plus.textContent = '+';
-                    handle.appendChild(plus);
-                    overlay.appendChild(handle);
                 }
             }
         } else {
@@ -438,31 +451,12 @@ export function createEditor(
 
         // "+" at the end of the phase row: WYSIWYG add-phase (append; drag to reposition).
         if (canAddPhase(m)) {
-            const addX = g.plotX1 + 28;
-            const addY = g.phaseLabelY - 5;
-            const add = svgEl('g', { class: 'phase-add', 'data-phase-add': 1 });
-            add.appendChild(
-                svgEl('circle', {
-                    cx: addX,
-                    cy: addY,
-                    r: 9,
-                    fill: '#ffffff',
-                    stroke: acc,
-                    'stroke-width': 2,
+            overlay.appendChild(
+                addBadge(g.plotX1 + 28, g.phaseLabelY - 5, acc, {
+                    class: 'phase-add',
+                    'data-phase-add': 1,
                 })
             );
-            const plus = svgEl('text', {
-                x: addX,
-                y: addY + 4,
-                'text-anchor': 'middle',
-                fill: acc,
-                'font-size': 13,
-                'font-weight': 700,
-                'pointer-events': 'none',
-            });
-            plus.textContent = '+';
-            add.appendChild(plus);
-            overlay.appendChild(add);
         }
 
         svg.appendChild(overlay);
@@ -470,45 +464,57 @@ export function createEditor(
 
     // --- Live updates during a drag -----------------------------------------
 
-    function updateCurve(index: number): void {
-        if (svg === null || geom === null) return;
-        const curve = model().curves[index];
+    function updateCurvePaths(
+        index: number
+    ): { fill: SVGPathElement; line: SVGPathElement; hit: SVGPathElement } | null {
+        if (svg === null) return null;
         const group = svg.querySelector(`.curves g[data-curve-index="${index}"]`);
-        if (curve === undefined || group === null) return;
-        const paths = group.querySelectorAll('path');
-        if (paths[0]) paths[0].setAttribute('d', curveAreaPath(curve, geom));
-        if (paths[1]) paths[1].setAttribute('d', curveLinePath(curve, geom));
+        if (group === null) return null;
+        // Query by class, not by child order: live repaints must not break if render.ts ever
+        // adds or reorders a path inside the curve group.
+        const fill = group.querySelector<SVGPathElement>('.curve-fill');
+        const line = group.querySelector<SVGPathElement>('.curve-line');
+        const hit = group.querySelector<SVGPathElement>('.curve-hit');
+        if (fill === null || line === null || hit === null) return null;
+        return { fill, line, hit };
+    }
+
+    /** Repaint a curve's geometry after a live point drag. */
+    function updateCurve(index: number): void {
+        if (geom === null) return;
+        const curve = model().curves[index];
+        const paths = updateCurvePaths(index);
+        if (curve === undefined || paths === null) return;
+        paths.fill.setAttribute('d', curveAreaPath(curve, geom));
+        paths.line.setAttribute('d', curveLinePath(curve, geom));
     }
 
     function updateCurveColor(index: number): void {
-        if (svg === null) return;
         const curve = model().curves[index];
-        const group = svg.querySelector(`.curves g[data-curve-index="${index}"]`);
-        if (curve === undefined || group === null) return;
-        const paths = group.querySelectorAll('path');
-        if (paths[0]) paths[0].setAttribute('fill', curve.color);
-        if (paths[1]) paths[1].setAttribute('stroke', curve.color);
+        const paths = updateCurvePaths(index);
+        if (curve === undefined || paths === null) return;
+        paths.fill.setAttribute('fill', curve.color);
+        paths.line.setAttribute('stroke', curve.color);
         // The invisible hit band is a wide stroke too — keep it transparent so the hover
         // highlight never paints through it.
-        if (paths[2]) paths[2].setAttribute('stroke', 'transparent');
+        paths.hit.setAttribute('stroke', 'transparent');
     }
 
     function updateCurveOpacity(index: number): void {
-        if (svg === null) return;
         const curve = model().curves[index];
-        const group = svg.querySelector(`.curves g[data-curve-index="${index}"]`);
-        if (curve === undefined || group === null) return;
-        const paths = group.querySelectorAll('path');
-        if (paths[0]) paths[0].setAttribute('fill-opacity', String(curve.opacity));
+        const paths = updateCurvePaths(index);
+        if (curve === undefined || paths === null) return;
+        paths.fill.setAttribute('fill-opacity', String(curve.opacity));
     }
 
     function repositionHandles(): void {
         if (svg === null || geom === null) return;
+        const g = geom;
         svg.querySelectorAll<SVGCircleElement>('circle.point-handle').forEach((circle) => {
             const index = Number(circle.getAttribute('data-handle-index'));
             const point = handlePoints[index];
             if (point === undefined) return;
-            const p = pointPx(point, geom as GraphGeom);
+            const p = pointPx(point, g);
             circle.setAttribute('cx', String(p.x));
             circle.setAttribute('cy', String(p.y));
         });
@@ -522,8 +528,7 @@ export function createEditor(
         if (rect.width === 0 || rect.height === 0) return null;
         const ux = (clientX - rect.left) * (geom.width / rect.width);
         const uy = (clientY - rect.top) * (geom.height / rect.height);
-        const mapped = geom.fromPx(ux, uy);
-        return { x: mapped.x, y: mapped.y };
+        return geom.fromPx(ux, uy);
     }
 
     function onPointerDown(event: PointerEvent): void {
@@ -617,12 +622,8 @@ export function createEditor(
         if (curveRemove !== null) {
             const index = Number(curveRemove.getAttribute('data-curve-remove'));
             if (removeCurve(model(), index)) {
-                if (selectedCurve === index) {
-                    selectedCurve = null;
-                    selectedPoint = null;
-                } else if (selectedCurve !== null && selectedCurve > index) {
-                    selectedCurve -= 1;
-                }
+                selectedCurve = afterRemove(selectedCurve, index);
+                if (selectedCurve === null) selectedPoint = null;
                 host.onCommit();
             }
             return;
@@ -682,26 +683,21 @@ export function createEditor(
         selectedPoint = point;
         const curveIndex = selectedCurve;
 
-        const move = (moveEvent: PointerEvent): void => {
-            const mapped = svgPointToModel(moveEvent.clientX, moveEvent.clientY);
-            if (mapped === null) return;
-            let x = mapped.x;
-            const y = mapped.y;
-            if (moveEvent.shiftKey || snapEnabled) {
-                x = nearestPhaseX(x, model().phases.length);
-            }
-            setPoint(model(), curveIndex, point, clampCoord(x), clampCoord(y));
-            updateCurve(curveIndex);
-            repositionHandles();
-            host.onLive();
-        };
-        const up = (): void => {
-            window.removeEventListener('pointermove', move);
-            window.removeEventListener('pointerup', up);
-            host.onCommit();
-        };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up);
+        startGesture(event, {
+            onMove: (state) => {
+                const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
+                if (mapped === null) return;
+                const x =
+                    state.event.shiftKey || snapEnabled
+                        ? nearestPhaseX(mapped.x, model().phases.length)
+                        : mapped.x;
+                setPoint(model(), curveIndex, point, clampCoord(x), clampCoord(mapped.y));
+                updateCurve(curveIndex);
+                repositionHandles();
+                host.onLive();
+            },
+            onEnd: () => host.onCommit(),
+        });
         event.preventDefault();
     }
 
@@ -715,23 +711,19 @@ export function createEditor(
         const minX = Math.min(...snapshot.map((s) => s.x0));
         const maxX = Math.max(...snapshot.map((s) => s.x0));
 
-        const move = (moveEvent: PointerEvent): void => {
-            const mapped = svgPointToModel(moveEvent.clientX, moveEvent.clientY);
-            if (mapped === null) return;
-            const dx = Math.max(-minX, Math.min(100 - maxX, mapped.x - start.x));
-            for (const s of snapshot) s.point.x = clampCoord(s.x0 + dx);
-            curve.points.sort((a, b) => a.x - b.x);
-            updateCurve(curveIndex);
-            repositionHandles();
-            host.onLive();
-        };
-        const up = (): void => {
-            window.removeEventListener('pointermove', move);
-            window.removeEventListener('pointerup', up);
-            host.onCommit();
-        };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up);
+        startGesture(event, {
+            onMove: (state) => {
+                const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
+                if (mapped === null) return;
+                const dx = Math.max(-minX, Math.min(100 - maxX, mapped.x - start.x));
+                for (const s of snapshot) s.point.x = clampCoord(s.x0 + dx);
+                curve.points.sort((a, b) => a.x - b.x);
+                updateCurve(curveIndex);
+                repositionHandles();
+                host.onLive();
+            },
+            onEnd: () => host.onCommit(),
+        });
         event.preventDefault();
     }
 
@@ -743,51 +735,43 @@ export function createEditor(
     function startPhaseInteraction(index: number, element: SVGElement, event: PointerEvent): void {
         if (svg === null || geom === null) return;
         const g = geom;
-        const startClient = { x: event.clientX, y: event.clientY };
-        let lastClient = startClient;
-        let dragging = false;
+        const currentSvg = svg;
 
         const toSvg = (clientX: number, clientY: number): { x: number; y: number } => {
-            const rect = (svg as SVGSVGElement).getBoundingClientRect();
+            const rect = currentSvg.getBoundingClientRect();
             return {
                 x: (clientX - rect.left) * (g.width / rect.width),
                 y: (clientY - rect.top) * (g.height / rect.height),
             };
         };
 
-        const move = (moveEvent: PointerEvent): void => {
-            if (!dragging) {
-                const dx = moveEvent.clientX - startClient.x;
-                const dy = moveEvent.clientY - startClient.y;
-                if (Math.hypot(dx, dy) < 6) return;
-                dragging = true;
-            }
-            lastClient = { x: moveEvent.clientX, y: moveEvent.clientY };
-            const p = toSvg(lastClient.x, lastClient.y);
-            element.setAttribute('x', String(Math.min(g.plotX1, Math.max(g.plotX0, p.x))));
-        };
-        const up = (): void => {
-            window.removeEventListener('pointermove', move);
-            window.removeEventListener('pointerup', up);
-            if (!dragging) {
-                startInline(element);
-                return;
-            }
-            const p = toSvg(lastClient.x, lastClient.y);
-            let targetIndex = index;
-            let best = Infinity;
-            g.phaseXs.forEach((tickX, i) => {
-                const distance = Math.abs(tickX - p.x);
-                if (distance < best) {
-                    best = distance;
-                    targetIndex = i;
+        startGesture(event, {
+            threshold: 6,
+            onMove: (state) => {
+                const p = toSvg(state.event.clientX, state.event.clientY);
+                element.setAttribute('x', String(Math.min(g.plotX1, Math.max(g.plotX0, p.x))));
+            },
+            onEnd: (state) => {
+                // Releasing without dragging edits the label text.
+                if (!state.moved) {
+                    startInline(element);
+                    return;
                 }
-            });
-            if (reorderPhase(model(), index, targetIndex)) host.onCommit();
-            else render();
-        };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up);
+                // Reorder to the phase tick nearest the release point.
+                const p = toSvg(state.event.clientX, state.event.clientY);
+                let targetIndex = index;
+                let best = Infinity;
+                g.phaseXs.forEach((tickX, i) => {
+                    const distance = Math.abs(tickX - p.x);
+                    if (distance < best) {
+                        best = distance;
+                        targetIndex = i;
+                    }
+                });
+                if (reorderPhase(model(), index, targetIndex)) host.onCommit();
+                else render();
+            },
+        });
         // Without preventDefault the browser's default focus handling blurs the inline editor
         // a plain click opens (same fix as the other edit fields).
         event.preventDefault();
@@ -810,16 +794,14 @@ export function createEditor(
         const curve = model().curves[index];
         if (curve === undefined) return;
 
-        if (activePicker !== null && activePicker.index === index) {
-            const stale = activePicker.input;
-            activePicker = null;
-            stale.remove();
-            return;
-        }
+        // Opening any swatch closes a previously stuck-open picker (programmatic clicks don't
+        // toggle); clicking the *same* swatch again just closes it rather than reopening.
         if (activePicker !== null) {
+            const sameSwatch = activePicker.index === index;
             const stale = activePicker.input;
             activePicker = null;
             stale.remove();
+            if (sameSwatch) return;
         }
 
         const canvasRect = canvasEl.getBoundingClientRect();
@@ -872,15 +854,14 @@ export function createEditor(
     /**
      * Drag a legend row by its hover handle to change the curve's paint order. The legend shows
      * rows in reverse paint order (front-most curve on top), so this works entirely in display
-     * slots: `data-curve-drag` carries the model index, which is mapped to its DOM slot here and
-     * back through `reorderCurve`'s display-order equivalent on release. Slot geometry comes from
-     * the layout (`geom.legendRows`) captured once at drag start, so the decision is pure
-     * arithmetic on the pointer delta and never disagrees with the preview. Rows can have different
-     * heights (wrapped notes): the dragged row follows the pointer 1:1, and the other rows shift
-     * by the dragged row's own slot size, which is exactly how much space the vacated slot needs.
-     * The drop target advances one slot per crossed boundary of the *original* stack — cumulative
-     * distance, not round() — so intermediate positions are reachable for any row count. Release
-     * reorders the model once.
+     * slots: `data-curve-drag` carries the model index, mapped to its DOM slot here and back
+     * through `reorderCurve` on release. Slot geometry comes from the layout captured once at drag
+     * start, so the decision is pure arithmetic on the pointer delta and never disagrees with the
+     * preview. Rows can have different heights (wrapped notes): the dragged row follows the
+     * pointer 1:1, and neighbours shift by the dragged row's own slot size — exactly how much
+     * space the vacated slot needs. The drop target advances one slot per crossed boundary of the
+     * *original* stack (cumulative distance, not round()), so intermediate positions are reachable
+     * for any row count. Release reorders the model once.
      */
     function startLegendDrag(curveIndex: number, event: PointerEvent): void {
         if (svg === null || geom === null) return;
@@ -896,24 +877,20 @@ export function createEditor(
         currentSvg.classList.add('legend-dragging');
 
         // SVG renders 1:1 inside the canvas, so layout units equal CSS pixels here.
-        const rows = geom.legendRows;
-        const tops = rows.map((row) => row.top);
+        const tops = geom.legendRows.map((row) => row.top);
         // Preview shift for neighbours equals the dragged row's own slot size.
-        const shiftPx = Math.max(1, rows[index].height);
+        const shiftPx = Math.max(1, geom.legendRows[index].height);
 
         const startY = event.clientY;
-        let lastY = startY;
-        let moved = false;
         let currentTarget = index;
 
         // Cumulative pointer distance against each crossed boundary of the original stack: to land
-        // k slots away the dragged row must travel the summed pitch between those slots. Symmetric
-        // up/down, works for any row count and variable row heights.
+        // k slots away the dragged row must travel the summed pitch between those slots.
         const targetFor = (clientY: number): number => {
             const dy = clientY - startY;
             let t = index;
             if (dy > 0) {
-                while (t < rows.length - 1 && dy >= tops[t + 1] - tops[index]) t += 1;
+                while (t < tops.length - 1 && dy >= tops[t + 1] - tops[index]) t += 1;
             } else if (dy < 0) {
                 while (t > 0 && -dy >= tops[index] - tops[t - 1]) t -= 1;
             }
@@ -933,107 +910,96 @@ export function createEditor(
             });
         };
 
-        const move = (moveEvent: PointerEvent): void => {
-            const dy = moveEvent.clientY - startY;
-            if (!moved && Math.abs(dy) < 4) return;
-            moved = true;
-            lastY = moveEvent.clientY;
-            dragged.style.transform = `translateY(${dy}px)`;
-            dragged.classList.add('dragging');
-            applyPreview(targetFor(moveEvent.clientY));
-        };
-        const up = (): void => {
-            window.removeEventListener('pointermove', move);
-            window.removeEventListener('pointerup', up);
+        const resetPreview = (): void => {
             dragged.style.transform = '';
             dragged.classList.remove('dragging');
             blocks.forEach((block) => {
                 if (block !== dragged) block.style.transform = '';
             });
             currentSvg.classList.remove('legend-dragging');
-            if (!moved) return;
-            const targetSlot = targetFor(lastY);
-            if (targetSlot === index) return;
-            // Display slots run front-to-back; the model array runs back-to-front. Moving a curve
-            // to display slot `targetSlot` is an insert-before in reversed coordinates.
-            const n = blocks.length;
-            const from = n - 1 - index;
-            const to = n - 1 - targetSlot;
-            if (reorderCurve(model(), from, to)) {
-                // Keep selection glued to the same curve after the splice.
-                if (selectedCurve === from) selectedCurve = to;
-                else if (selectedCurve !== null) {
-                    const lo = Math.min(from, to);
-                    const hi = Math.max(from, to);
-                    if (selectedCurve > lo && selectedCurve <= hi) {
-                        selectedCurve += from < to ? -1 : 1;
-                    }
-                }
-                host.onCommit();
-            }
         };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up);
+
+        startGesture(event, {
+            threshold: 4,
+            onMove: (state) => {
+                dragged.style.transform = `translateY(${state.dy}px)`;
+                dragged.classList.add('dragging');
+                applyPreview(targetFor(state.event.clientY));
+            },
+            onEnd: (state) => {
+                resetPreview();
+                if (!state.moved) return;
+                const targetSlot = targetFor(state.event.clientY);
+                if (targetSlot === index) return;
+                // Display slots run front-to-back; the model array runs back-to-front, so moving a
+                // curve to display slot `targetSlot` is an insert-before in reversed coordinates.
+                const n = blocks.length;
+                const from = n - 1 - index;
+                const to = n - 1 - targetSlot;
+                if (reorderCurve(model(), from, to)) {
+                    // Keep selection glued to the same curve after the splice.
+                    selectedCurve = afterMove(selectedCurve, from, to);
+                    host.onCommit();
+                }
+            },
+        });
         event.preventDefault();
     }
 
     // --- Inline text editing -------------------------------------------------
 
-    function startInline(element: SVGElement): void {
+    /** Resolve a `data-edit-field` element to its current text and a writer for new text. */
+    function fieldBinding(
+        element: SVGElement
+    ): { value: string; multiline: boolean; write: (next: string) => void } | null {
         const field = element.getAttribute('data-edit-field');
-        if (field === null) return;
+        if (field === null) return null;
         const m = model();
-        let value = '';
-        let multiline = false;
-        let write: (next: string) => void = () => {};
-
-        if (field === 'title') {
-            value = m.title ?? '';
-            write = (next) => {
-                m.title = next;
-            };
-        } else if (field === 'yaxis') {
-            value = m.yAxisTitle ?? '';
-            write = (next) => {
-                m.yAxisTitle = next;
-            };
-        } else if (field === 'phase') {
-            const index = Number(element.getAttribute('data-phase-index'));
-            const phase = m.phases[index];
-            if (phase === undefined) return;
-            value = phase.label;
-            write = (next) => {
-                const target = m.phases[index];
-                if (target) target.label = next;
-            };
-        } else if (field === 'curve-label') {
-            const index = Number(element.getAttribute('data-curve-index'));
-            const curve = m.curves[index];
-            if (curve === undefined) return;
-            value = curve.label;
-            write = (next) => {
-                const target = m.curves[index];
-                if (target) target.label = next;
-            };
-        } else if (field === 'legend-block') {
-            const index = Number(element.getAttribute('data-curve-index'));
-            const curve = m.curves[index];
-            if (curve === undefined) return;
-            // One block for the whole legend row: first line is the label, the rest are notes.
-            value = curve.notes === '' ? curve.label : `${curve.label}\n${curve.notes}`;
-            multiline = true;
-            write = (next) => {
-                const target = m.curves[index];
-                if (target === undefined) return;
-                const newline = next.indexOf('\n');
-                target.label = newline === -1 ? next : next.slice(0, newline);
-                target.notes = newline === -1 ? '' : next.slice(newline + 1);
-            };
-        } else {
-            return;
+        switch (field) {
+            case 'title':
+                return { value: m.title ?? '', multiline: false, write: (v) => (m.title = v) };
+            case 'yaxis':
+                return {
+                    value: m.yAxisTitle ?? '',
+                    multiline: false,
+                    write: (v) => (m.yAxisTitle = v),
+                };
+            case 'phase': {
+                const index = Number(element.getAttribute('data-phase-index'));
+                const phase = m.phases[index];
+                if (phase === undefined) return null;
+                return { value: phase.label, multiline: false, write: (v) => (phase.label = v) };
+            }
+            case 'curve-label': {
+                const index = Number(element.getAttribute('data-curve-index'));
+                const curve = m.curves[index];
+                if (curve === undefined) return null;
+                return { value: curve.label, multiline: false, write: (v) => (curve.label = v) };
+            }
+            case 'legend-block': {
+                const index = Number(element.getAttribute('data-curve-index'));
+                const curve = m.curves[index];
+                if (curve === undefined) return null;
+                // One block for the whole legend row: first line is the label, the rest are notes.
+                return {
+                    value: curve.notes === '' ? curve.label : `${curve.label}\n${curve.notes}`,
+                    multiline: true,
+                    write: (v) => {
+                        const newline = v.indexOf('\n');
+                        curve.label = newline === -1 ? v : v.slice(0, newline);
+                        curve.notes = newline === -1 ? '' : v.slice(newline + 1);
+                    },
+                };
+            }
+            default:
+                return null;
         }
+    }
 
-        openInlineInput(element, value, multiline, write);
+    function startInline(element: SVGElement): void {
+        const binding = fieldBinding(element);
+        if (binding === null) return;
+        openInlineInput(element, binding.value, binding.multiline, binding.write);
     }
 
     function openInlineInput(

@@ -8,11 +8,12 @@
  * or removed) and `y` is effort (0 at the baseline, 100 at the top). Curves are filled down to
  * the baseline so their overlaps blend translucently.
  *
- * This module owns the type contract, constants, validation (`cloneModel` / `parseModel`), the
- * preset models, and the curve/point/phase mutation helpers the editor calls.
+ * This module owns the type contract, constants, validation (`cloneModel` / `parseModel`), and
+ * the curve/point/phase mutation helpers the editor calls. The static preset models live in
+ * `presets.ts`.
  *
  * Invariant: a curve's `points` are kept sorted by ascending x. Dragging mutates a point in place
- * and re-sorts; callers track the dragged point by object identity (see `pointIndexOf`).
+ * and re-sorts; callers track the dragged point by object identity.
  */
 
 export interface CurvePoint {
@@ -124,21 +125,26 @@ export function cloneModel(source: GraphModel): GraphModel {
     };
 }
 
+function record(input: unknown): Record<string, unknown> | null {
+    return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : null;
+}
+
 function parsePoint(input: unknown): CurvePoint | null {
-    if (typeof input !== 'object' || input === null) return null;
-    const obj = input as Record<string, unknown>;
-    if (typeof obj.x !== 'number' || typeof obj.y !== 'number') return null;
-    if (!Number.isFinite(obj.x) || !Number.isFinite(obj.y)) return null;
-    return { x: clampCoord(obj.x), y: clampCoord(obj.y) };
+    const obj = record(input);
+    if (obj === null) return null;
+    const { x, y } = obj;
+    if (typeof x !== 'number' || typeof y !== 'number') return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: clampCoord(x), y: clampCoord(y) };
 }
 
 function parseCurve(input: unknown): Curve | null {
-    if (typeof input !== 'object' || input === null) return null;
-    const obj = input as Record<string, unknown>;
-    if (typeof obj.label !== 'string') return null;
-    if (typeof obj.notes !== 'string') return null;
-    if (typeof obj.color !== 'string' || !COLOR_PATTERN.test(obj.color)) return null;
-    if (typeof obj.smooth !== 'boolean') return null;
+    const obj = record(input);
+    if (obj === null) return null;
+    const { label, notes, color, smooth } = obj;
+    if (typeof label !== 'string' || typeof notes !== 'string') return null;
+    if (typeof color !== 'string' || !COLOR_PATTERN.test(color)) return null;
+    if (typeof smooth !== 'boolean') return null;
     if (!Array.isArray(obj.points)) return null;
     if (obj.points.length < MIN_POINTS || obj.points.length > MAX_POINTS) return null;
 
@@ -152,60 +158,55 @@ function parseCurve(input: unknown): Curve | null {
     points.sort((a, b) => a.x - b.x);
 
     const opacity = typeof obj.opacity === 'number' ? clampOpacity(obj.opacity) : DEFAULT_OPACITY;
-    return {
-        label: obj.label,
-        color: obj.color.toLowerCase(),
-        notes: obj.notes,
-        points,
-        smooth: obj.smooth,
-        opacity,
-    };
+    return { label, color: color.toLowerCase(), notes, points, smooth, opacity };
 }
 
 function parsePhase(input: unknown): Phase | null {
-    if (typeof input !== 'object' || input === null) return null;
-    const obj = input as Record<string, unknown>;
+    const obj = record(input);
+    if (obj === null) return null;
     if (typeof obj.label !== 'string') return null;
     return { label: obj.label };
 }
 
 /**
  * Validate and sanitize unknown data (e.g. JSON decoded from the URL) into a GraphModel.
- * Returns null when the data cannot be interpreted as a model of the current version.
+ * Returns null when the data cannot be interpreted as a model of the current version. Every
+ * field must be present with the right type — there are no lenient defaults, so a malformed
+ * payload is rejected rather than silently repaired.
  */
 export function parseModel(input: unknown): GraphModel | null {
-    if (typeof input !== 'object' || input === null) return null;
+    const obj = record(input);
+    if (obj === null) return null;
 
-    const obj = input as Record<string, unknown>;
+    const { title, yAxisTitle, numericAxis, phases, curves } = obj;
     if (obj.version !== MODEL_VERSION) return null;
-    if (obj.title !== undefined && typeof obj.title !== 'string') return null;
-    if (obj.yAxisTitle !== undefined && typeof obj.yAxisTitle !== 'string') return null;
-    if (typeof obj.numericAxis !== 'boolean') return null;
-    if (!Array.isArray(obj.phases) || !Array.isArray(obj.curves)) return null;
-    if (obj.phases.length < MIN_PHASES || obj.phases.length > MAX_PHASES) return null;
-    if (obj.curves.length < MIN_CURVES || obj.curves.length > MAX_CURVES) return null;
+    if (typeof title !== 'string' || typeof yAxisTitle !== 'string') return null;
+    if (typeof numericAxis !== 'boolean') return null;
+    if (!Array.isArray(phases) || !Array.isArray(curves)) return null;
+    if (phases.length < MIN_PHASES || phases.length > MAX_PHASES) return null;
+    if (curves.length < MIN_CURVES || curves.length > MAX_CURVES) return null;
 
-    const phases: Phase[] = [];
-    for (const rawPhase of obj.phases) {
+    const parsedPhases: Phase[] = [];
+    for (const rawPhase of phases) {
         const phase = parsePhase(rawPhase);
         if (phase === null) return null;
-        phases.push(phase);
+        parsedPhases.push(phase);
     }
 
-    const curves: Curve[] = [];
-    for (const rawCurve of obj.curves) {
+    const parsedCurves: Curve[] = [];
+    for (const rawCurve of curves) {
         const curve = parseCurve(rawCurve);
         if (curve === null) return null;
-        curves.push(curve);
+        parsedCurves.push(curve);
     }
 
     return {
         version: MODEL_VERSION,
-        title: obj.title,
-        yAxisTitle: obj.yAxisTitle,
-        numericAxis: obj.numericAxis,
-        phases,
-        curves,
+        title: title as string | undefined,
+        yAxisTitle: yAxisTitle as string | undefined,
+        numericAxis,
+        phases: parsedPhases,
+        curves: parsedCurves,
     };
 }
 
@@ -243,6 +244,7 @@ export function nearestPhaseX(x: number, count: number): number {
 
 // --- Curve operations --------------------------------------------------------
 
+/** Keep the invariant that a curve's points are sorted by ascending x. */
 function sortPoints(points: CurvePoint[]): void {
     points.sort((a, b) => a.x - b.x);
 }
@@ -369,8 +371,8 @@ export function removePoint(model: GraphModel, curveIndex: number, pointIndex: n
 }
 
 /**
- * Move a point (clamped to 0..100) and re-sort. Returns the point object so the caller can keep
- * tracking it by identity after the array order changes; use `pointIndexOf` for the new index.
+ * Move a point (clamped to 0..100) and re-sort. The point object identity survives the re-sort,
+ * so callers keep tracking the dragged point by reference.
  */
 export function setPoint(
     model: GraphModel,
@@ -383,23 +385,6 @@ export function setPoint(
     if (curve === undefined || !curve.points.includes(point)) return false;
     point.x = clampCoord(x);
     point.y = clampCoord(y);
-    sortPoints(curve.points);
-    return true;
-}
-
-export function pointIndexOf(curve: Curve, point: CurvePoint): number {
-    return curve.points.indexOf(point);
-}
-
-/** Snap a point's x to the nearest phase tick (the "fixed control point per phase" behavior). */
-export function snapPointToPhase(
-    model: GraphModel,
-    curveIndex: number,
-    point: CurvePoint
-): boolean {
-    const curve = model.curves[curveIndex];
-    if (curve === undefined || !curve.points.includes(point)) return false;
-    point.x = nearestPhaseX(point.x, model.phases.length);
     sortPoints(curve.points);
     return true;
 }
@@ -440,163 +425,3 @@ export function reorderPhase(model: GraphModel, from: number, to: number): boole
     model.phases.splice(target, 0, phase);
     return true;
 }
-
-// --- Presets -----------------------------------------------------------------
-
-/** A named, complete model applied in one step. `data` is static — always apply via cloneModel(). */
-export interface GraphPreset {
-    name: string;
-    data: GraphModel;
-}
-
-export const PRESETS: GraphPreset[] = [
-    {
-        name: 'Schematic',
-        data: {
-            version: MODEL_VERSION,
-            title: 'Shift-Left / Shift-Right',
-            yAxisTitle: 'Test volume',
-            numericAxis: false,
-            phases: [
-                { label: 'Pre-merge' },
-                { label: 'Post-merge' },
-                { label: 'Pre-release' },
-                { label: 'Post-deploy' },
-            ],
-            curves: [
-                {
-                    label: 'Shift-left',
-                    color: PALETTE[0],
-                    notes: 'Quality moved earlier: unit, component and integration tests, code review and static checks before merge.',
-                    smooth: true,
-                    opacity: 0.5,
-                    points: [
-                        { x: 0, y: 6 },
-                        { x: 12, y: 34 },
-                        { x: 22, y: 80 },
-                        { x: 34, y: 52 },
-                        { x: 50, y: 20 },
-                        { x: 70, y: 5 },
-                        { x: 100, y: 0 },
-                    ],
-                },
-                {
-                    label: 'Traditional quality model',
-                    color: PALETTE[1],
-                    notes: 'A hardening phase concentrated just before release: system, regression and acceptance testing.',
-                    smooth: true,
-                    opacity: 0.5,
-                    points: [
-                        { x: 18, y: 0 },
-                        { x: 38, y: 28 },
-                        { x: 56, y: 86 },
-                        { x: 70, y: 60 },
-                        { x: 82, y: 22 },
-                        { x: 100, y: 0 },
-                    ],
-                },
-                {
-                    label: 'Shift-right',
-                    color: PALETTE[2],
-                    notes: 'Quality in production: monitoring, canary releases, feature flags, real-user feedback and fast rollback.',
-                    smooth: true,
-                    opacity: 0.5,
-                    points: [
-                        { x: 40, y: 0 },
-                        { x: 62, y: 10 },
-                        { x: 80, y: 52 },
-                        { x: 90, y: 74 },
-                        { x: 100, y: 24 },
-                    ],
-                },
-            ],
-        },
-    },
-    {
-        name: 'Detailed',
-        data: {
-            version: MODEL_VERSION,
-            title: 'Shift-Left / Shift-Right (detailed)',
-            yAxisTitle: 'Testing & quality effort',
-            numericAxis: true,
-            phases: [
-                { label: 'Plan' },
-                { label: 'Code' },
-                { label: 'Build' },
-                { label: 'Test' },
-                { label: 'Release' },
-                { label: 'Operate' },
-            ],
-            curves: [
-                {
-                    label: 'Shift-left',
-                    color: PALETTE[0],
-                    notes: 'Effort front-loaded: threat modeling and unit/component tests peak during Plan and Code, tapering after Test.',
-                    smooth: true,
-                    opacity: 0.45,
-                    points: [
-                        { x: 8, y: 95 },
-                        { x: 25, y: 78 },
-                        { x: 42, y: 52 },
-                        { x: 58, y: 28 },
-                        { x: 75, y: 10 },
-                        { x: 92, y: 0 },
-                    ],
-                },
-                {
-                    label: 'Traditional quality model',
-                    color: PALETTE[1],
-                    notes: 'A dedicated Test gate dominates the middle of the cycle, with hardening carried into Release.',
-                    smooth: true,
-                    opacity: 0.45,
-                    points: [
-                        { x: 8, y: 15 },
-                        { x: 25, y: 35 },
-                        { x: 42, y: 60 },
-                        { x: 58, y: 88 },
-                        { x: 75, y: 45 },
-                        { x: 92, y: 12 },
-                    ],
-                },
-                {
-                    label: 'Shift-right',
-                    color: PALETTE[2],
-                    notes: 'Effort grows after Release: observability, canary analysis and feedback loops keep quality work running in production.',
-                    smooth: true,
-                    opacity: 0.45,
-                    points: [
-                        { x: 8, y: 0 },
-                        { x: 25, y: 6 },
-                        { x: 42, y: 16 },
-                        { x: 58, y: 34 },
-                        { x: 75, y: 66 },
-                        { x: 92, y: 92 },
-                    ],
-                },
-            ],
-        },
-    },
-    {
-        name: 'Empty',
-        data: {
-            version: MODEL_VERSION,
-            title: '',
-            yAxisTitle: 'Test volume',
-            numericAxis: false,
-            phases: [{ label: 'Phase 1' }, { label: 'Phase 2' }],
-            curves: [
-                {
-                    label: '',
-                    color: PALETTE[0],
-                    notes: '',
-                    smooth: true,
-                    opacity: 0.5,
-                    points: [
-                        { x: 0, y: 0 },
-                        { x: 100, y: 0 },
-                    ],
-                },
-            ],
-        },
-    },
-];
