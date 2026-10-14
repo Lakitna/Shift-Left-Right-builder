@@ -5,13 +5,28 @@
  * canvas and for both export formats, so all styling is baked into SVG attributes and the exports
  * render a fresh SVG from the model (never the editing overlays).
  *
- * `computeLayout` centralizes all geometry (plot rect, phase tick positions, legend rows) and is
- * exported so the editor can place control-point handles and hit-test without duplicating math.
+ * `computeLayout` centralizes all geometry (plot rect, phase tick positions, event callout band,
+ * legend rows) and is exported so the editor can place control-point handles and hit-test without
+ * duplicating math.
  */
 
-import { removeBadge, SVG_NS, svgEl, textEl } from './dom';
-import { MAX_CURVES, phasePositions, type Curve, type CurvePoint, type GraphModel } from './model';
+import { addBadge, removeBadge, SVG_NS, svgEl, textEl } from './dom';
+import {
+    MAX_CURVES,
+    MAX_EVENTS,
+    phaseBoundaries,
+    phasePositions,
+    type Curve,
+    type CurvePoint,
+    type GraphEvent,
+    type GraphModel,
+} from './model';
 import { STYLE, type CanvasPalette, type FontRole, type GraphStyle } from './style';
+import { isDarkMode } from './theme';
+
+// Klein-blue accent for the editor-only "add event" affordance, matching the editor toolbar accent.
+const ACCENT_LIGHT = '#002fa7';
+const ACCENT_DARK = '#6c8cff';
 
 export interface RenderOptions {
     style?: GraphStyle;
@@ -36,6 +51,40 @@ export interface LegendRow {
     noteLines: string[];
 }
 
+/** How a callout's text is anchored to its gate line, depending on how close the gate is to an edge. */
+export type CalloutAnchor = 'start' | 'middle' | 'end';
+
+/**
+ * Decide where an event callout's text sits relative to its gate line. A callout centred on the
+ * gate would overflow the plot near the left/right edges (and drift away from the line), so there
+ * it flips to hug the gate: left-aligned just right of the line on the left edge, right-aligned
+ * just left of the line on the right edge. Returns the SVG `text-anchor` and the x to draw at.
+ */
+export function calloutAnchor(
+    gateX: number,
+    plotX0: number,
+    plotX1: number,
+    maxWidth: number
+): { anchor: CalloutAnchor; textX: number } {
+    const half = maxWidth / 2;
+    const pad = 4;
+    if (gateX < plotX0 + half) return { anchor: 'start', textX: gateX + pad };
+    if (gateX > plotX1 - half) return { anchor: 'end', textX: gateX - pad };
+    return { anchor: 'middle', textX: gateX };
+}
+
+/** A laid-out event callout: its gate x and the wrapped label/note lines drawn above the plot. */
+export interface EventCallout {
+    /** Model x (0..100) of the event, for the gate line. */
+    x: number;
+    /** How the label + note are anchored to the gate (see {@link calloutAnchor}). */
+    anchor: CalloutAnchor;
+    /** Pixel x the label + note are drawn at (the gate x, nudged inward near the edges). */
+    textX: number;
+    label: string;
+    noteLines: string[];
+}
+
 export interface GraphGeom {
     width: number;
     height: number;
@@ -49,6 +98,13 @@ export interface GraphGeom {
     /** Pixel x of each phase tick, in phase order. */
     phaseXs: number[];
     phaseLabelY: number;
+    /** Pixel x of each event gate, in event order. */
+    eventXs: number[];
+    /** Laid-out event callouts (label + wrapped note), in event order. */
+    eventCallouts: EventCallout[];
+    /** Baseline y of the event label line, and the top of the first note line (both above the plot). */
+    eventLabelY: number;
+    eventNoteTop: number;
     legendX: number;
     legendWidth: number;
     legendRows: LegendRow[];
@@ -144,7 +200,39 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
     const plotX0 = L.margin.left;
     const plotWidth = L.plotWidth;
     const plotX1 = plotX0 + plotWidth;
-    const plotY0 = L.margin.top + titleBand;
+
+    // Event callout band above the plot: the tallest callout (label line + wrapped note lines)
+    // sets its height and pushes the plot down. Empty when there are no events; in edit mode a
+    // band with at least one event reserves a single line so the plot does not jump when a note is
+    // first typed. Notes are wrapped once here and reused by the renderer.
+    const eventNoteFont = fontSpec(style, 'eventNote');
+    const eventLabelLineH = style.font.eventLabel.size + 6;
+    const eventCallouts: EventCallout[] = model.events.map((event: GraphEvent) => {
+        // Use the raw horizontal map, NOT `toPx` — `toPx` is declared further down (it closes over
+        // `baselineY`, which the band height below has not fixed yet), so calling it here is a TDZ
+        // error. Horizontally toPx(x,0).x is just plotX0 + (x/100)*plotWidth.
+        const gateX = plotX0 + (event.x / 100) * plotWidth;
+        const { anchor, textX } = calloutAnchor(gateX, plotX0, plotX1, L.eventCalloutMaxWidth);
+        return {
+            x: event.x,
+            anchor,
+            textX,
+            label: event.label,
+            noteLines: wrapText(event.note, L.eventCalloutMaxWidth, eventNoteFont),
+        };
+    });
+    let eventBand = 0;
+    if (model.events.length > 0) {
+        const tallest = Math.max(
+            ...eventCallouts.map(
+                (callout) => eventLabelLineH + callout.noteLines.length * L.eventNoteLineH
+            )
+        );
+        const reserved = options.editing ? Math.max(tallest, eventLabelLineH) : tallest;
+        eventBand = L.eventLabelGap + reserved + L.eventBandPad;
+    }
+
+    const plotY0 = L.margin.top + titleBand + eventBand;
     const plotHeight = L.plotHeight;
     const plotY1 = plotY0 + plotHeight;
     const baselineY = plotY1;
@@ -161,16 +249,22 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
     const phaseXs = phasePositions(model.phases.length).map((position) => toPx(position, 0).x);
     const phaseLabelY = plotY1 + L.phaseLabelGap;
 
+    // Event geometry: gate x per event, plus the label/note baselines inside the band above the
+    // plot. The leader tick runs from the callout block's bottom down toward the plot top.
+    const eventXs = model.events.map((event) => toPx(event.x, 0).x);
+    const eventLabelY = L.margin.top + titleBand + L.eventLabelGap;
+    const eventNoteTop = eventLabelY + 6;
+
     // Legend block below the phase labels. Rows are laid out in DISPLAY order (front-most curve
     // first), matching how renderGraphSvg paints them; consumers index this array by display slot.
     // Exports can drop the whole block (includeLegend false); the editor always keeps it.
-    const includeLegend = options.includeLegend ?? true;
     const legendX = plotX0;
     const legendWidth = plotWidth - (L.legendSwatch + L.legendSwatchGap) - L.legendRemoveZone;
     const noteFont = fontSpec(style, 'legendNote');
     const labelLineH = style.font.legendLabel.size + 6;
     const noteLineH = style.font.legendNote.lineHeight;
     const phaseBottom = phaseLabelY + (style.font.phaseLabel.size + 6);
+    const includeLegend = options.includeLegend ?? true;
     const legendTop = includeLegend ? phaseBottom + L.legendGap : phaseBottom;
 
     let cursor = legendTop;
@@ -204,6 +298,10 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
         baselineY,
         phaseXs,
         phaseLabelY,
+        eventXs,
+        eventCallouts,
+        eventLabelY,
+        eventNoteTop,
         legendX,
         legendWidth,
         legendRows,
@@ -365,6 +463,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     const geom = computeLayout(model, options);
     const { style, palette } = geom;
     const L = style.layout;
+    const acc = isDarkMode() ? ACCENT_DARK : ACCENT_LIGHT;
 
     const svg = svgEl('svg', {
         xmlns: SVG_NS,
@@ -494,20 +593,26 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         })
     );
 
-    // Phase ticks + labels. In edit mode each label sits in a group that reveals a small ✕
-    // on hover (remove phase); the label itself is click-to-edit / drag-to-reorder.
-    model.phases.forEach((phase, index) => {
-        const px = geom.phaseXs[index];
+    // Phase separators: faint vertical lines on the BOUNDARIES between adjacent bands — the same
+    // edges events snap to — instead of at the band centres, and none at the plot's outer edges.
+    for (const boundary of phaseBoundaries(model.phases.length).slice(1, -1)) {
+        const bx = geom.toPx(boundary, 0).x;
         grid.appendChild(
             svgEl('line', {
-                x1: round(px),
+                x1: round(bx),
                 y1: round(geom.plotY0),
-                x2: round(px),
+                x2: round(bx),
                 y2: round(geom.baselineY),
                 stroke: palette.phaseTick,
                 'stroke-width': 1,
             })
         );
+    }
+
+    // Phase labels sit at each band's centre. In edit mode each label is a group that reveals a
+    // small ✕ on hover (remove phase); the label itself is click-to-edit / drag-to-reorder.
+    model.phases.forEach((phase, index) => {
+        const px = geom.phaseXs[index];
         const group = svgEl('g', { class: 'phase-group' });
         group.appendChild(
             textEl(phase.label, {
@@ -672,6 +777,116 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     svg.appendChild(labelsGroup);
     // Axis lines / arrowheads / labels sit above every curve so nothing can occlude them.
     svg.appendChild(axes);
+
+    // Events (moments in time). The gate line + baseline diamond are appended to `axes` so they
+    // paint ABOVE the translucent curve fills — a gate must stay readable wherever a curve runs.
+    // The label + wrapped note sit in the reserved band above the plot, joined by a short leader
+    // tick. In edit mode each callout reveals a hover ✕ (remove) and empty labels show a hint.
+    model.events.forEach((event, index) => {
+        const callout = geom.eventCallouts[index];
+        const px = geom.eventXs[index];
+        axes.appendChild(
+            svgEl('line', {
+                x1: round(px),
+                y1: round(geom.plotY0),
+                x2: round(px),
+                y2: round(geom.baselineY),
+                stroke: palette.eventLine,
+                'stroke-width': 1.5,
+                'stroke-dasharray': '6 4',
+                class: 'event-line',
+                'data-event-line': index,
+                'pointer-events': 'none',
+            })
+        );
+        const dm = 5;
+        axes.appendChild(
+            svgEl('polygon', {
+                points: `${round(px)},${round(geom.baselineY - dm)} ${round(px + dm)},${round(
+                    geom.baselineY
+                )} ${round(px)},${round(geom.baselineY + dm)} ${round(px - dm)},${round(
+                    geom.baselineY
+                )}`,
+                fill: palette.eventLine,
+                stroke: palette.background,
+                'stroke-width': 1,
+                class: 'event-diamond',
+                'data-event-diamond': index,
+                'pointer-events': 'none',
+            })
+        );
+
+        const group = svgEl('g', { class: 'event-group' });
+        const blockBottom = geom.eventNoteTop + callout.noteLines.length * L.eventNoteLineH;
+        group.appendChild(
+            svgEl('line', {
+                x1: round(px),
+                y1: round(blockBottom),
+                x2: round(px),
+                y2: round(geom.plotY0 - L.eventLeader),
+                stroke: palette.eventLine,
+                'stroke-width': 1,
+                'data-event-leader': index,
+                'pointer-events': 'none',
+            })
+        );
+        const label = (event.label ?? '').trim();
+        if (label !== '') {
+            group.appendChild(
+                textEl(label, {
+                    x: round(callout.textX),
+                    y: round(geom.eventLabelY),
+                    'text-anchor': callout.anchor,
+                    fill: palette.eventLabel,
+                    'font-size': style.font.eventLabel.size,
+                    'font-weight': style.font.eventLabel.weight,
+                    class: 'event-label',
+                    'data-edit-field': 'event',
+                    'data-event-index': index,
+                })
+            );
+        } else if (options.editing) {
+            group.appendChild(
+                hintPlaceholder(callout.textX, geom.eventLabelY - 5, 36, palette, {
+                    'data-edit-field': 'event',
+                    'data-event-index': index,
+                })
+            );
+        }
+        callout.noteLines.forEach((line, j) => {
+            group.appendChild(
+                textEl(line, {
+                    x: round(callout.textX),
+                    y: round(geom.eventNoteTop + j * L.eventNoteLineH + style.font.eventNote.size),
+                    'text-anchor': callout.anchor,
+                    fill: palette.legendMuted,
+                    'font-size': style.font.eventNote.size,
+                    'font-weight': style.font.eventNote.weight,
+                    'data-event-note': index,
+                    'pointer-events': 'none',
+                })
+            );
+        });
+        if (options.editing) {
+            group.appendChild(
+                removeBadge(px, blockBottom + 12, 9, 11, 4, palette, {
+                    class: 'event-remove',
+                    'data-event-remove': index,
+                })
+            );
+        }
+        svg.appendChild(group);
+    });
+
+    // WYSIWYG "add event": a "+" at the right end of the callout band (mirrors the phase-row "+").
+    if (options.editing && model.events.length < MAX_EVENTS) {
+        svg.appendChild(
+            addBadge(geom.plotX1 + 28, geom.eventLabelY - 5, acc, {
+                class: 'event-add',
+                'data-event-add': 1,
+            })
+        );
+    }
 
     // Legend below: one editable block per curve (first line = label, rest = notes). Rows are
     // displayed in REVERSE paint order: the front-most curve (last in the model) sits on top.

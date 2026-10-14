@@ -333,6 +333,39 @@ button.primary {
     opacity: 1;
 }
 
+/* Events (moments in time). The label is click-to-edit AND drag-to-reposition, so it shows a grab
+   cursor (overriding the generic text caret). The ✕ reveals on callout hover, and the "+" appears
+   when there is a reason to look for it — hovering the graph or an event, or while editing. */
+#graph-container text.event-label {
+    cursor: grab;
+}
+
+#graph-container .event-remove {
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.12s ease;
+}
+
+#graph-container .event-group:hover .event-remove {
+    opacity: 0.85;
+}
+
+#graph-container .event-remove:hover {
+    opacity: 1;
+}
+
+#graph-container .event-add {
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+#graph-container:hover .event-add,
+#graph-container:has(.event-group:hover) .event-add,
+#graph-container:has(.inline-editor) .event-add {
+    opacity: 1;
+}
+
 /* Legend swatches are the curve color selectors. */
 #graph-container rect.legend-swatch:hover {
     stroke: var(--accent);

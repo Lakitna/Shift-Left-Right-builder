@@ -27,6 +27,13 @@ export const PRESETS: GraphPreset[] = [
                 { label: 'Pre-release' },
                 { label: 'Post-deploy' },
             ],
+            events: [
+                {
+                    label: 'Release',
+                    note: '',
+                    x: 75,
+                },
+            ],
             curves: [
                 {
                     label: 'Shift-left',
@@ -91,6 +98,13 @@ export const PRESETS: GraphPreset[] = [
                 { label: 'Release' },
                 { label: 'Operate' },
             ],
+            events: [
+                {
+                    label: 'Release',
+                    note: '',
+                    x: 67,
+                },
+            ],
             curves: [
                 {
                     label: 'Shift-left',
@@ -148,6 +162,7 @@ export const PRESETS: GraphPreset[] = [
             yAxisTitle: 'Test volume',
             numericAxis: false,
             phases: [{ label: 'Phase 1' }, { label: 'Phase 2' }],
+            events: [],
             curves: [
                 {
                     label: '',

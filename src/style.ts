@@ -21,6 +21,8 @@ export type FontRole =
     | 'title'
     | 'axisTitle'
     | 'phaseLabel'
+    | 'eventLabel'
+    | 'eventNote'
     | 'tickLabel'
     | 'curveLabel'
     | 'legendLabel'
@@ -31,6 +33,8 @@ export interface Typography {
     title: RoleFont;
     axisTitle: RoleFont;
     phaseLabel: RoleFont;
+    eventLabel: RoleFont;
+    eventNote: NoteFont;
     tickLabel: RoleFont;
     curveLabel: RoleFont;
     legendLabel: RoleFont;
@@ -43,6 +47,10 @@ export interface CanvasPalette {
     grid: string;
     phaseTick: string;
     phaseLabel: string;
+    /** Vertical gate line + diamond marker for a moment-in-time event. */
+    eventLine: string;
+    /** Event callout label text (above the plot). */
+    eventLabel: string;
     tickLabel: string;
     title: string;
     axisTitle: string;
@@ -65,6 +73,14 @@ export interface Layout {
     phaseLabelGap: number;
     /** Gap between the phase labels and the legend block. */
     legendGap: number;
+    /** Event callout band above the plot: label gap, note line height, leader tick length, and
+     *  bottom padding before the plot top. */
+    eventLabelGap: number;
+    eventNoteLineH: number;
+    eventLeader: number;
+    eventBandPad: number;
+    /** Max width an event note wraps to, so callouts stay compact. */
+    eventCalloutMaxWidth: number;
     legendRowGap: number;
     legendSwatch: number;
     legendSwatchGap: number;
@@ -95,6 +111,8 @@ export const STYLE: GraphStyle = {
         title: { size: 22, weight: 700 },
         axisTitle: { size: 14, weight: 600 },
         phaseLabel: { size: 15, weight: 600 },
+        eventLabel: { size: 14, weight: 700 },
+        eventNote: { size: 12, weight: 400, lineHeight: 15 },
         tickLabel: { size: 12, weight: 500 },
         curveLabel: { size: 15, weight: 700 },
         legendLabel: { size: 14, weight: 700 },
@@ -106,6 +124,8 @@ export const STYLE: GraphStyle = {
         grid: '#e7ebf0',
         phaseTick: '#dfe3e8',
         phaseLabel: '#243041',
+        eventLine: '#002fa7',
+        eventLabel: '#002fa7',
         tickLabel: '#5f6b7a',
         title: '#16213a',
         axisTitle: '#243041',
@@ -121,6 +141,8 @@ export const STYLE: GraphStyle = {
         grid: '#2a313c',
         phaseTick: '#2a313c',
         phaseLabel: '#e6e9ee',
+        eventLine: '#6c8cff',
+        eventLabel: '#6c8cff',
         tickLabel: '#9aa4b2',
         title: '#eef2f7',
         axisTitle: '#c7d0dc',
@@ -138,6 +160,11 @@ export const STYLE: GraphStyle = {
         titleGap: 18,
         phaseLabelGap: 30,
         legendGap: 26,
+        eventLabelGap: 16,
+        eventNoteLineH: 15,
+        eventLeader: 10,
+        eventBandPad: 8,
+        eventCalloutMaxWidth: 200,
         legendRowGap: 12,
         legendSwatch: 16,
         legendSwatchGap: 10,

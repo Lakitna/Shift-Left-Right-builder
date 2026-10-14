@@ -9,7 +9,7 @@
  * the baseline so their overlaps blend translucently.
  *
  * This module owns the type contract, constants, validation (`cloneModel` / `parseModel`), and
- * the curve/point/phase mutation helpers the editor calls. The static preset models live in
+ * the curve/point/phase/event mutation helpers the editor calls. The static preset models live in
  * `presets.ts`.
  *
  * Invariant: a curve's `points` are kept sorted by ascending x. Dragging mutates a point in place
@@ -43,6 +43,21 @@ export interface Phase {
     label: string;
 }
 
+/**
+ * A moment in time on the timeline — a gate, decision, or release rather than a span. Unlike a
+ * phase (a band with an evenly-spaced position), an event carries its own free `x` (0..100, % of
+ * the plot width) so it keeps its position when phases are added or removed, exactly like a curve
+ * point. It is drawn as a vertical line through the plot with a label + note callout above it.
+ */
+export interface GraphEvent {
+    /** Short label shown in the callout above the plot. */
+    label: string;
+    /** Free-text description shown as a wrapped second line under the label. */
+    note: string;
+    /** Horizontal position, 0..100 (% of the plot width). */
+    x: number;
+}
+
 export interface GraphModel {
     version: number;
     /** Optional heading drawn above the graph. */
@@ -53,6 +68,8 @@ export interface GraphModel {
     numericAxis: boolean;
     /** X-axis phases, left to right. At least MIN_PHASES. */
     phases: Phase[];
+    /** Moments in time, kept sorted by ascending x. May be empty. */
+    events: GraphEvent[];
     /** The curves, drawn in order (later curves paint on top). */
     curves: Curve[];
 }
@@ -65,6 +82,8 @@ export const MIN_POINTS = 2;
 export const MAX_POINTS = 40;
 export const MIN_PHASES = 1;
 export const MAX_PHASES = 12;
+export const MIN_EVENTS = 0;
+export const MAX_EVENTS = 12;
 
 export const MIN_COORD = 0;
 export const MAX_COORD = 100;
@@ -114,6 +133,11 @@ export function cloneModel(source: GraphModel): GraphModel {
         yAxisTitle: source.yAxisTitle ?? '',
         numericAxis: source.numericAxis,
         phases: source.phases.map((phase) => ({ label: phase.label })),
+        events: source.events.map((event) => ({
+            label: event.label,
+            note: event.note,
+            x: event.x,
+        })),
         curves: source.curves.map((curve) => ({
             label: curve.label,
             color: curve.color,
@@ -168,6 +192,15 @@ function parsePhase(input: unknown): Phase | null {
     return { label: obj.label };
 }
 
+function parseEvent(input: unknown): GraphEvent | null {
+    const obj = record(input);
+    if (obj === null) return null;
+    const { label, note, x } = obj;
+    if (typeof label !== 'string' || typeof note !== 'string') return null;
+    if (typeof x !== 'number' || !Number.isFinite(x)) return null;
+    return { label, note, x: clampCoord(x) };
+}
+
 /**
  * Validate and sanitize unknown data (e.g. JSON decoded from the URL) into a GraphModel.
  * Returns null when the data cannot be interpreted as a model of the current version. Every
@@ -178,12 +211,13 @@ export function parseModel(input: unknown): GraphModel | null {
     const obj = record(input);
     if (obj === null) return null;
 
-    const { title, yAxisTitle, numericAxis, phases, curves } = obj;
+    const { title, yAxisTitle, numericAxis, phases, events, curves } = obj;
     if (obj.version !== MODEL_VERSION) return null;
     if (typeof title !== 'string' || typeof yAxisTitle !== 'string') return null;
     if (typeof numericAxis !== 'boolean') return null;
-    if (!Array.isArray(phases) || !Array.isArray(curves)) return null;
+    if (!Array.isArray(phases) || !Array.isArray(events) || !Array.isArray(curves)) return null;
     if (phases.length < MIN_PHASES || phases.length > MAX_PHASES) return null;
+    if (events.length < MIN_EVENTS || events.length > MAX_EVENTS) return null;
     if (curves.length < MIN_CURVES || curves.length > MAX_CURVES) return null;
 
     const parsedPhases: Phase[] = [];
@@ -192,6 +226,14 @@ export function parseModel(input: unknown): GraphModel | null {
         if (phase === null) return null;
         parsedPhases.push(phase);
     }
+
+    const parsedEvents: GraphEvent[] = [];
+    for (const rawEvent of events) {
+        const event = parseEvent(rawEvent);
+        if (event === null) return null;
+        parsedEvents.push(event);
+    }
+    parsedEvents.sort((a, b) => a.x - b.x);
 
     const parsedCurves: Curve[] = [];
     for (const rawCurve of curves) {
@@ -206,6 +248,7 @@ export function parseModel(input: unknown): GraphModel | null {
         yAxisTitle: yAxisTitle as string | undefined,
         numericAxis,
         phases: parsedPhases,
+        events: parsedEvents,
         curves: parsedCurves,
     };
 }
@@ -236,6 +279,35 @@ export function nearestPhaseX(x: number, count: number): number {
         const distance = Math.abs(x - position);
         if (distance < bestDistance) {
             best = position;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+/**
+ * X positions (0..100) of the edges between adjacent phase bands: `count + 1` boundaries running
+ * from 0 to 100. A moment in time (a release, a go/no-go gate) naturally sits on an edge rather
+ * than at a band center, so events snap here — distinct from curve points, which snap to the
+ * `phasePositions` centers. Rounded to stay within the 0..100 integer coordinate invariant.
+ */
+export function phaseBoundaries(count: number): number[] {
+    const boundaries: number[] = [];
+    for (let i = 0; i <= count; i++) {
+        boundaries.push(Math.round((i / count) * 100));
+    }
+    return boundaries;
+}
+
+/** The phase-boundary x (0..100) nearest to `x`. */
+export function nearestBoundaryX(x: number, count: number): number {
+    const boundaries = phaseBoundaries(count);
+    let best = boundaries[0];
+    let bestDistance = Math.abs(x - best);
+    for (const boundary of boundaries) {
+        const distance = Math.abs(x - boundary);
+        if (distance < bestDistance) {
+            best = boundary;
             bestDistance = distance;
         }
     }
@@ -423,5 +495,43 @@ export function reorderPhase(model: GraphModel, from: number, to: number): boole
     if (target === from) return false;
     const [phase] = model.phases.splice(from, 1);
     model.phases.splice(target, 0, phase);
+    return true;
+}
+
+// --- Event operations --------------------------------------------------------
+
+export function canAddEvent(model: GraphModel): boolean {
+    return model.events.length < MAX_EVENTS;
+}
+
+export function canRemoveEvent(model: GraphModel): boolean {
+    return model.events.length > MIN_EVENTS;
+}
+
+/** Append an event at the centre of the timeline; the caller drags it into place. Returns the
+ *  new event (so the editor can locate it after the re-render) or null when the cap is reached. */
+export function addEvent(model: GraphModel): GraphEvent | null {
+    if (!canAddEvent(model)) return null;
+    const event: GraphEvent = { label: `Event ${model.events.length + 1}`, note: '', x: 50 };
+    model.events.push(event);
+    model.events.sort((a, b) => a.x - b.x);
+    return event;
+}
+
+export function removeEvent(model: GraphModel, index: number): boolean {
+    if (!canRemoveEvent(model)) return false;
+    if (index < 0 || index >= model.events.length) return false;
+    model.events.splice(index, 1);
+    return true;
+}
+
+/**
+ * Move an event to a new x (clamped to 0..100) and re-sort. The event object identity survives the
+ * re-sort, so a drag keeps tracking the same event by reference (mirrors `setPoint`).
+ */
+export function setEventX(model: GraphModel, event: GraphEvent, x: number): boolean {
+    if (!model.events.includes(event)) return false;
+    event.x = clampCoord(x);
+    model.events.sort((a, b) => a.x - b.x);
     return true;
 }

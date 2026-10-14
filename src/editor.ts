@@ -21,6 +21,7 @@ import { addBadge, svgEl } from './dom';
 import { startGesture } from './gesture';
 import {
     addCurve,
+    addEvent,
     addPhase,
     canAddPhase,
     canRemoveCurve,
@@ -33,12 +34,15 @@ import {
     MAX_OPACITY,
     MIN_OPACITY,
     moveCurve,
+    nearestBoundaryX,
     nearestPhaseX,
     removeCurve,
+    removeEvent,
     removePhase,
     removePoint,
     reorderCurve,
     reorderPhase,
+    setEventX,
     setPoint,
     type Curve,
     type CurvePoint,
@@ -46,6 +50,7 @@ import {
 } from './model';
 import { PRESETS } from './presets';
 import {
+    calloutAnchor,
     curveAreaPath,
     curveLinePath,
     pointPx,
@@ -520,6 +525,51 @@ export function createEditor(
         });
     }
 
+    /**
+     * Repaint one event after a live drag: move its gate line, leader tick, baseline diamond, and
+     * callout text to the event's current x. The callout anchor is recomputed with the same
+     * `calloutAnchor` rule the renderer uses, so the label hugs the gate near the plot edges
+     * instead of drifting away from it.
+     */
+    function updateEvent(index: number): void {
+        if (svg === null || geom === null) return;
+        const g = geom;
+        const event = model().events[index];
+        if (event === undefined) return;
+        const px = g.toPx(event.x, 0).x;
+        const { anchor, textX } = calloutAnchor(
+            px,
+            g.plotX0,
+            g.plotX1,
+            STYLE.layout.eventCalloutMaxWidth
+        );
+        const dm = 5;
+        const byY = g.baselineY;
+        const line = svg.querySelector(`[data-event-line="${index}"]`);
+        if (line !== null) {
+            line.setAttribute('x1', String(px));
+            line.setAttribute('x2', String(px));
+        }
+        const leader = svg.querySelector(`[data-event-leader="${index}"]`);
+        if (leader !== null) {
+            leader.setAttribute('x1', String(px));
+            leader.setAttribute('x2', String(px));
+        }
+        const diamond = svg.querySelector(`[data-event-diamond="${index}"]`);
+        if (diamond !== null) {
+            diamond.setAttribute(
+                'points',
+                `${px},${byY - dm} ${px + dm},${byY} ${px},${byY + dm} ${px - dm},${byY}`
+            );
+        }
+        svg.querySelectorAll(
+            `text[data-event-index="${index}"], text[data-event-note="${index}"]`
+        ).forEach((el) => {
+            el.setAttribute('x', String(textX));
+            el.setAttribute('text-anchor', anchor);
+        });
+    }
+
     // --- Pointer handling ----------------------------------------------------
 
     function svgPointToModel(clientX: number, clientY: number): CurvePoint | null {
@@ -584,6 +634,26 @@ export function createEditor(
             return;
         }
 
+        const eventRemove = target.closest('[data-event-remove]');
+        if (eventRemove !== null) {
+            const index = Number(eventRemove.getAttribute('data-event-remove'));
+            if (removeEvent(model(), index)) host.onCommit();
+            return;
+        }
+
+        // "+" at the end of the event band: append an event and open its label for typing so the
+        // new event is named right where it was added (mirrors "+ Add curve").
+        if (target.closest('[data-event-add]') !== null) {
+            const added = addEvent(model());
+            if (added !== null) {
+                host.onCommit();
+                const index = model().events.indexOf(added);
+                const label = svg?.querySelector(`text[data-event-index="${index}"]`);
+                if (label instanceof SVGElement) startInline(label);
+            }
+            return;
+        }
+
         // Legend "+ Add curve" row: append a curve, select it, and open its label for typing so
         // the new curve is named right where it was clicked.
         if (target.closest('[data-curve-add]') !== null) {
@@ -605,6 +675,18 @@ export function createEditor(
             startPhaseInteraction(
                 Number(phaseText.getAttribute('data-phase-index')),
                 phaseText as SVGElement,
+                event
+            );
+            return;
+        }
+
+        const eventText = target.closest('text[data-event-index]');
+        if (eventText !== null) {
+            // Event labels are click-to-edit AND drag-to-reposition (snap to the nearest phase
+            // boundary with Shift or the "Snap to phases" toggle).
+            startEventInteraction(
+                Number(eventText.getAttribute('data-event-index')),
+                eventText as SVGElement,
                 event
             );
             return;
@@ -770,6 +852,46 @@ export function createEditor(
                 });
                 if (reorderPhase(model(), index, targetIndex)) host.onCommit();
                 else render();
+            },
+        });
+        // Without preventDefault the browser's default focus handling blurs the inline editor
+        // a plain click opens (same fix as the other edit fields).
+        event.preventDefault();
+    }
+
+    /**
+     * Click-vs-drag on an event label: releasing without dragging opens the inline text editor;
+     * dragging moves the event along the timeline (snapping to the nearest phase BOUNDARY while
+     * Shift is held or "Snap to phases" is on) and commits on release. The ✕ revealed on hover
+     * (see render.ts) is the single way to remove an event.
+     */
+    function startEventInteraction(index: number, element: SVGElement, event: PointerEvent): void {
+        const target = model().events[index];
+        if (target === undefined) return;
+
+        startGesture(event, {
+            threshold: 6,
+            onMove: (state) => {
+                if (!state.moved) return;
+                const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
+                if (mapped === null) return;
+                const x =
+                    state.event.shiftKey || snapEnabled
+                        ? nearestBoundaryX(mapped.x, model().phases.length)
+                        : mapped.x;
+                target.x = clampCoord(x);
+                updateEvent(index);
+                host.onLive();
+            },
+            onEnd: (state) => {
+                // Releasing without dragging edits the label + note.
+                if (!state.moved) {
+                    startInline(element);
+                    return;
+                }
+                // Commit the final position (re-sorts the event list).
+                setEventX(model(), target, target.x);
+                host.onCommit();
             },
         });
         // Without preventDefault the browser's default focus handling blurs the inline editor
@@ -969,6 +1091,21 @@ export function createEditor(
                 const phase = m.phases[index];
                 if (phase === undefined) return null;
                 return { value: phase.label, multiline: false, write: (v) => (phase.label = v) };
+            }
+            case 'event': {
+                const index = Number(element.getAttribute('data-event-index'));
+                const event = m.events[index];
+                if (event === undefined) return null;
+                // One block for the whole callout: first line is the label, the rest are the note.
+                return {
+                    value: event.note === '' ? event.label : `${event.label}\n${event.note}`,
+                    multiline: true,
+                    write: (v) => {
+                        const newline = v.indexOf('\n');
+                        event.label = newline === -1 ? v : v.slice(0, newline);
+                        event.note = newline === -1 ? '' : v.slice(newline + 1);
+                    },
+                };
             }
             case 'curve-label': {
                 const index = Number(element.getAttribute('data-curve-index'));

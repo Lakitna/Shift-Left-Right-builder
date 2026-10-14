@@ -11,6 +11,7 @@
  * Wire format (version 1) is compact but still readable JSON:
  * - phases are plain strings ("Pre-merge"), not {label} objects;
  * - curve points are [x, y] tuples, not {x, y} objects;
+ * - events are [label, note, x] tuples (always present, possibly empty);
  * - fields at their default are omitted: empty notes, numericAxis=false, smooth=true,
  *   opacity=DEFAULT_OPACITY.
  * `title` and `yAxisTitle` are always written (as "" when unset) so the decoded model satisfies
@@ -43,6 +44,7 @@ interface WireModel {
     yAxisTitle: string;
     numericAxis?: boolean;
     phases: string[];
+    events: [string, string, number][];
     curves: WireCurve[];
 }
 
@@ -53,6 +55,11 @@ function toWire(model: GraphModel): WireModel {
         yAxisTitle: model.yAxisTitle ?? '',
         ...(model.numericAxis ? { numericAxis: true } : {}),
         phases: model.phases.map((phase) => phase.label),
+        events: model.events.map((event): [string, string, number] => [
+            event.label,
+            event.note,
+            event.x,
+        ]),
         curves: model.curves.map((curve) => {
             const entry: WireCurve = {
                 label: curve.label,
@@ -75,6 +82,7 @@ function fromWire(wire: WireModel): unknown {
         yAxisTitle: wire.yAxisTitle,
         numericAxis: wire.numericAxis === true,
         phases: wire.phases.map((label) => ({ label })),
+        events: wire.events.map(([label, note, x]) => ({ label, note, x })),
         curves: wire.curves.map((curve) => ({
             label: curve.label,
             color: curve.color,
