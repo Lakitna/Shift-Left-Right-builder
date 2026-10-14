@@ -1,7 +1,12 @@
 /**
- * URL state: the whole graph model travels in the page URL as base64url JSON in the `#p=`
- * hash parameter, so any model can be shared by copying the link. Written with
- * `history.replaceState` (no history entries) and read back + validated on load.
+ * URL state: the whole graph model travels in the page URL as base64url DEFLATE of the compact
+ * wire JSON in the `#p=` hash parameter, so any model can be shared by copying the link.
+ * Written with `history.replaceState` (no history entries) and read back + validated on load.
+ *
+ * Compression uses the browser's built-in `CompressionStream` ('deflate-raw') — no dependency.
+ * It roughly halves note-heavy payloads; tiny models may come out slightly larger, which is
+ * fine. Streams are async, hence the Promise-based API. Old uncompressed links fail to inflate
+ * and fall back to the default model with a warning banner.
  *
  * Wire format (version 1) is compact but still readable JSON:
  * - phases are plain strings ("Pre-merge"), not {label} objects;
@@ -94,22 +99,54 @@ function toBinary(bytes: Uint8Array): string {
     return binary;
 }
 
-/** Encode a model as URL-safe base64 of its compact wire JSON (UTF-8 safe). */
-export function encodeModel(model: GraphModel): string {
-    const json = JSON.stringify(toWire(model));
-    return btoa(toBinary(new TextEncoder().encode(json)))
-        .replaceAll('+', '-')
-        .replaceAll('/', '_')
-        .replaceAll('=', '');
+/** Raw bytes → URL-safe base64 (padding stripped). */
+function toBase64Url(bytes: Uint8Array): string {
+    return btoa(toBinary(bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
-/** Decode a base64url string back into a validated model, or null when invalid. */
-export function decodeModel(encoded: string): GraphModel | null {
+/** URL-safe base64 → raw bytes, re-padding before `atob`. */
+function fromBase64Url(encoded: string): Uint8Array<ArrayBuffer> {
+    let base64 = encoded.replaceAll('-', '+').replaceAll('_', '/');
+    base64 += '='.repeat((4 - (base64.length % 4)) % 4);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+/** Push bytes through a Compression/DecompressionStream and collect the output. */
+async function pipeBytes(
+    bytes: Uint8Array<ArrayBuffer>,
+    stream: CompressionStream | DecompressionStream
+): Promise<Uint8Array> {
+    const writer = stream.writable.getWriter();
+    void writer.write(bytes);
+    void writer.close();
+    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+
+/** Encode a model as URL-safe base64 of the DEFLATE'd compact wire JSON (UTF-8 safe). */
+export async function encodeModel(model: GraphModel): Promise<string> {
+    const json = JSON.stringify(toWire(model));
+    const deflated = await pipeBytes(
+        new TextEncoder().encode(json),
+        new CompressionStream('deflate-raw')
+    );
+    return toBase64Url(deflated);
+}
+
+/** Decode a base64url DEFLATE string back into a validated model, or null when invalid. */
+export async function decodeModel(encoded: string): Promise<GraphModel | null> {
     try {
-        let base64 = encoded.replaceAll('-', '+').replaceAll('_', '/');
-        base64 += '='.repeat((4 - (base64.length % 4)) % 4);
-        const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
-        const parsed = JSON.parse(new TextDecoder().decode(bytes)) as { version?: unknown } | null;
+        const inflated = await pipeBytes(
+            fromBase64Url(encoded),
+            new DecompressionStream('deflate-raw')
+        );
+        const parsed = JSON.parse(new TextDecoder().decode(inflated)) as {
+            version?: unknown;
+        } | null;
         if (typeof parsed !== 'object' || parsed === null || parsed.version !== MODEL_VERSION) {
             return null;
         }
@@ -126,23 +163,22 @@ export interface HashReadResult {
     present: boolean;
 }
 
-export function readHash(): HashReadResult {
+export async function readHash(): Promise<HashReadResult> {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const value = params.get(HASH_PARAM);
     if (value === null || value === '') {
         return { model: null, present: false };
     }
-    return { model: decodeModel(value), present: true };
+    return { model: await decodeModel(value), present: true };
 }
 
 /**
- * Write the model into the URL hash without adding a history entry. Returns the encoded model
- * string (the caller compares it to avoid needless rewrites).
+ * Write the model into the URL hash without adding a history entry. Callers that must read the
+ * fresh URL back (copy-link) await this; the debounced sync fires and forgets.
  */
-export function writeStateToHash(model: GraphModel): string {
-    const encoded = encodeModel(model);
+export async function writeStateToHash(model: GraphModel): Promise<void> {
+    const encoded = await encodeModel(model);
     const params = new URLSearchParams();
     params.set(HASH_PARAM, encoded);
     window.history.replaceState(null, '', `#${params.toString()}`);
-    return encoded;
 }

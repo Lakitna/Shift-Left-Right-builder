@@ -104,14 +104,14 @@ function syncUrl(): void {
     cancelUrlSync();
     urlTimer = window.setTimeout(() => {
         urlTimer = undefined;
-        writeStateToHash(model);
+        void writeStateToHash(model);
     }, URL_SYNC_DELAY_MS);
 }
 
-/** Immediate hash update (used before copying the link). */
-function syncUrlNow(): void {
+/** Immediate hash update; resolves once the URL carries the current model. */
+async function syncUrlNow(): Promise<void> {
     cancelUrlSync();
-    writeStateToHash(model);
+    await writeStateToHash(model);
 }
 
 function render(): void {
@@ -196,7 +196,7 @@ document.addEventListener('pointerdown', (event) => {
 });
 
 async function copyLink(): Promise<void> {
-    syncUrlNow();
+    await syncUrlNow();
     try {
         await navigator.clipboard.writeText(window.location.href);
         flashButton(copyButton, 'Copied!');
@@ -347,8 +347,8 @@ mustFind<HTMLButtonElement>('btn-export-svg').addEventListener('click', () => {
 
 // --- Boot --------------------------------------------------------------------
 
-function loadFromHash(): void {
-    const hash = readHash();
+async function loadFromHash(): Promise<void> {
+    const hash = await readHash();
     if (hash.model !== null) {
         model = hash.model;
         warningMessage = '';
@@ -360,6 +360,6 @@ function loadFromHash(): void {
     render();
 }
 
-window.addEventListener('hashchange', () => loadFromHash());
+window.addEventListener('hashchange', () => void loadFromHash());
 
-loadFromHash();
+void loadFromHash();
