@@ -1,0 +1,32 @@
+{
+    // Browser app bundled by tsdown (rolldown). tsc is used for type-checking only;
+    // tsdown.config.ts lives outside "include" and is loaded by tsdown itself.
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "lib": [
+            "ESNext",
+            "DOM",
+            "DOM.Iterable"
+        ],
+        "types": [], // browser globals only — src/ uses no Node.js APIs
+        // no emit: the bundle is produced by tsdown, not tsc
+        "noEmit": true,
+        "strict": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "isolatedModules": true,
+        // transpiler-safe module/type syntax (rolldown transpiles each file in isolation)
+        "verbatimModuleSyntax": true,
+        "erasableSyntaxOnly": true,
+        // extra checks beyond "strict"
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitOverride": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true
+    },
+    "include": [
+        "src"
+    ]
+}

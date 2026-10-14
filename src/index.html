@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Shift-Left-Right Builder</title>
+        <meta
+            name="description"
+            content="Build, edit and share your own shift-left / shift-right quality model as a graph. The full model lives in the page URL."
+        />
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <header class="app-header">
+            <h1 class="app-title">Shift-Left-Right Builder</h1>
+            <div class="controls">
+                <div class="actions">
+                    <button id="btn-theme" type="button" aria-label="Toggle dark mode">🌙</button>
+                    <div class="share-wrap">
+                        <button id="btn-share" type="button" aria-haspopup="true" aria-expanded="false" title="Copy a link to this model or download it as an image">
+                            Share ▾
+                        </button>
+                        <div id="share-menu" class="share-menu" hidden>
+                            <button id="btn-copy-link" type="button">Copy link</button>
+                            <button id="btn-export-svg" type="button">Download .svg…</button>
+                            <button id="btn-export-png" type="button">Download .png…</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div id="warning" class="warning" hidden></div>
+
+        <main class="layout">
+            <div class="canvas-column">
+                <div id="editor-toolbar" class="toolbar" role="toolbar" aria-label="Graph editing tools"></div>
+                <section id="graph-container" aria-label="Graph canvas"></section>
+            </div>
+        </main>
+
+        <footer>
+            This work is licensed under
+            <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+        </footer>
+
+        <dialog id="png-dialog" class="modal" aria-labelledby="png-dialog-title">
+            <h2 id="png-dialog-title" class="modal-title">Export as PNG</h2>
+            <div class="modal-preview">
+                <img id="png-preview-img" alt="Preview of the exported PNG" hidden />
+            </div>
+            <div class="modal-body">
+                <fieldset class="field">
+                    <legend class="field-label">Color mode</legend>
+                    <div class="segmented">
+                        <label class="segment">
+                            <input id="png-theme-light" type="radio" name="png-theme" value="light" />
+                            <span>Light</span>
+                        </label>
+                        <label class="segment">
+                            <input id="png-theme-dark" type="radio" name="png-theme" value="dark" />
+                            <span>Dark</span>
+                        </label>
+                    </div>
+                </fieldset>
+                <label class="field field-inline">
+                    <input id="png-transparent" type="checkbox" />
+                    <span>Transparent background</span>
+                </label>
+                <label class="field">
+                    <span class="field-label">Width in pixels</span>
+                    <input id="png-width" type="number" min="120" max="8000" step="10" value="1500" />
+                </label>
+                <p id="png-size-hint" class="field-hint"></p>
+                <label class="field">
+                    <span class="field-label">File name</span>
+                    <input id="png-filename" type="text" value="shift-left-right.png" spellcheck="false" autocomplete="off" />
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button id="png-cancel" type="button">Cancel</button>
+                <button id="png-download" type="button" class="primary">Download .png</button>
+            </div>
+        </dialog>
+
+        <dialog id="svg-dialog" class="modal" aria-labelledby="svg-dialog-title">
+            <h2 id="svg-dialog-title" class="modal-title">Export as SVG</h2>
+            <div class="modal-preview">
+                <img id="svg-preview-img" alt="Preview of the exported SVG" hidden />
+            </div>
+            <div class="modal-body">
+                <fieldset class="field">
+                    <legend class="field-label">Color mode</legend>
+                    <div class="segmented">
+                        <label class="segment">
+                            <input id="svg-theme-light" type="radio" name="svg-theme" value="light" />
+                            <span>Light</span>
+                        </label>
+                        <label class="segment">
+                            <input id="svg-theme-dark" type="radio" name="svg-theme" value="dark" />
+                            <span>Dark</span>
+                        </label>
+                    </div>
+                </fieldset>
+                <label class="field field-inline">
+                    <input id="svg-transparent" type="checkbox" />
+                    <span>Transparent background</span>
+                </label>
+                <label class="field">
+                    <span class="field-label">File name</span>
+                    <input id="svg-filename" type="text" value="shift-left-right.svg" spellcheck="false" autocomplete="off" />
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button id="svg-cancel" type="button">Cancel</button>
+                <button id="svg-download" type="button" class="primary">Download .svg</button>
+            </div>
+        </dialog>
+
+        <script type="module" src="app.js"></script>
+    </body>
+</html>

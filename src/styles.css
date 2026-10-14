@@ -1,0 +1,548 @@
+:root {
+    color-scheme: light;
+    --background: #f5f6f8;
+    --surface: #ffffff;
+    --border: #dfe3e8;
+    --text: #1c1c1c;
+    --text-muted: #5f6b7a;
+    --accent: #002fa7;
+    --accent-ink: #ffffff;
+    --danger: #c0392b;
+    --hover: #eef1f5;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+    --background: #14171d;
+    --surface: #1e232b;
+    --border: #3a4250;
+    --text: #e6e9ee;
+    --text-muted: #9aa4b2;
+    --accent: #6c8cff;
+    --accent-ink: #0b1220;
+    --danger: #ff7b72;
+    --hover: #2a313c;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-ui);
+    background: var(--background);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.app-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 0;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+button {
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+    background: var(--hover);
+}
+
+button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+button.primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-color: var(--accent);
+}
+
+.share-wrap {
+    position: relative;
+}
+
+.share-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    display: flex;
+    flex-direction: column;
+    min-width: 180px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+    z-index: 30;
+}
+
+/* The `display: flex` above would otherwise override the [hidden] attribute. */
+.share-menu[hidden] {
+    display: none;
+}
+
+.share-menu button {
+    border: none;
+    background: transparent;
+    text-align: left;
+    width: 100%;
+    border-radius: 6px;
+}
+
+.warning {
+    margin: 12px 20px 0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: #fff3cd;
+    color: #6b5200;
+    border: 1px solid #ffe08a;
+    font-size: 14px;
+}
+
+:root[data-theme='dark'] .warning {
+    background: #3a2d12;
+    color: #e8c07a;
+    border-color: #5c4718;
+}
+
+.layout {
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.canvas-column {
+    width: 100%;
+    max-width: 1160px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.tool-segment {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.tool-divider {
+    width: 1px;
+    align-self: stretch;
+    min-height: 26px;
+    background: var(--border);
+}
+
+.tool-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toolbar select {
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+}
+
+.tool-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+.tool-check input {
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+}
+
+#graph-container {
+    position: relative;
+    overflow: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+#graph-container svg.graph-svg {
+    display: block;
+    max-width: none;
+}
+
+#graph-container .point-handle {
+    cursor: grab;
+}
+
+#graph-container .point-handle:active {
+    cursor: grabbing;
+}
+
+#graph-container .insert-handle {
+    cursor: copy;
+}
+
+/* The invisible hit band is what the pointer sees; hovering it brightens the curve's top line,
+   which also makes the paint order obvious at a glance. Fills stay clickable for selection, but
+   sit under the band so overlapping curves resolve to the nearest line. */
+#graph-container .curves path {
+    cursor: pointer;
+}
+
+#graph-container .curves g:hover .curve-line {
+    stroke-opacity: 0.55;
+}
+
+#graph-container [data-edit-field] {
+    cursor: text;
+}
+
+/* Legend swatch is not a text field — keep the pointer, not the caret. */
+#graph-container rect.legend-swatch {
+    cursor: pointer;
+}
+
+/* Hover-revealed affordances on legend rows (drag handle + remove ✕). */
+#graph-container .legend-drag,
+#graph-container .legend-remove {
+    opacity: 0;
+    cursor: grab;
+    transition: opacity 0.12s ease;
+}
+
+#graph-container .legend-remove {
+    cursor: pointer;
+}
+
+#graph-container .legend-block:hover .legend-drag,
+#graph-container .legend-block:hover .legend-remove {
+    opacity: 0.85;
+}
+
+#graph-container .legend-drag:active {
+    cursor: grabbing;
+}
+
+#graph-container .legend-remove:hover,
+#graph-container .legend-drag:hover {
+    opacity: 1;
+}
+
+/* The row being dragged lifts above its siblings. */
+#graph-container .legend-block.dragging {
+    opacity: 0.9;
+    filter: drop-shadow(0 3px 6px rgb(0 0 0 / 25%));
+}
+
+/* Other rows slide smoothly into their previewed slots while a drag is in progress. */
+#graph-container svg.legend-dragging .legend-block:not(.dragging) {
+    transition: transform 0.14s ease;
+}
+
+/* While dragging, other rows stop reacting to hover (remove ✕ / drag grip stay hidden). */
+#graph-container svg.legend-dragging .legend-block:not(.dragging):hover .legend-remove,
+#graph-container svg.legend-dragging .legend-block:not(.dragging):hover .legend-drag {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Phase labels are draggable as well as editable — the grab cursor says so. */
+#graph-container text[data-phase-index] {
+    cursor: grab;
+}
+
+#graph-container .phase-remove {
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.12s ease;
+}
+
+#graph-container .phase-group:hover .phase-remove {
+    opacity: 0.85;
+}
+
+#graph-container .phase-remove:hover {
+    opacity: 1;
+}
+
+/* The phase "+" appears only when there is a reason to look for it: hovering the graph or a
+   phase label, or while a phase label is being edited (the inline editor lives in the canvas). */
+#graph-container .phase-add {
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+}
+
+#graph-container:hover .phase-add,
+#graph-container:has(.phase-group:hover) .phase-add,
+#graph-container:has(.inline-editor) .phase-add {
+    opacity: 1;
+}
+
+/* Legend swatches are the curve color selectors. */
+#graph-container rect.legend-swatch:hover {
+    stroke: var(--accent);
+    stroke-width: 2;
+}
+
+/* Transparent native color input dropped over a legend swatch by the editor. */
+#graph-container .inline-color {
+    z-index: 25;
+    padding: 0;
+    border: none;
+    background: none;
+    opacity: 0;
+    cursor: pointer;
+}
+
+/* Legend "+ Add curve" row — same affordance as the phase "+". */
+#graph-container .legend-add {
+    cursor: pointer;
+}
+
+#graph-container .legend-add:hover rect {
+    fill: #00000008;
+}
+
+#graph-container .legend-add:hover text {
+    fill: var(--text);
+}
+
+/* Hover affordance: dotted underline signals "click to edit" on canvas text. */
+#graph-container text[data-edit-field]:hover {
+    text-decoration: underline dotted;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.inline-editor {
+    position: absolute;
+    z-index: 20;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    color: var(--text);
+    background: var(--surface);
+    border: 2px solid var(--accent);
+    border-radius: 6px;
+    padding: 4px 6px;
+    outline: none;
+}
+
+.inline-editor.multiline {
+    resize: vertical;
+    line-height: 1.4;
+}
+
+footer {
+    padding: 16px 20px 28px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+footer a {
+    color: var(--accent);
+}
+
+/* Export dialogs */
+
+.modal {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 0;
+    width: min(440px, 92vw);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 20px 60px rgb(0 0 0 / 30%);
+}
+
+.modal::backdrop {
+    background: rgb(0 0 0 / 45%);
+}
+
+.modal-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-preview {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 120px;
+    padding: 16px 20px;
+    background:
+        repeating-conic-gradient(rgb(0 0 0 / 6%) 0% 25%, transparent 0% 50%) 50% / 18px 18px;
+}
+
+.modal-preview img {
+    max-width: 100%;
+    max-height: 220px;
+    border-radius: 6px;
+}
+
+.modal-body {
+    padding: 4px 20px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border: none;
+    margin: 0;
+    padding: 0;
+}
+
+.field-inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.field-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 600;
+    padding: 0;
+}
+
+.field input[type='number'],
+.field input[type='text'] {
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.field-hint {
+    margin: -6px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.segmented {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    width: max-content;
+}
+
+.segment {
+    padding: 7px 14px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.segment input {
+    display: none;
+}
+
+.segment:has(input:checked) {
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+}
+
+/* Accessibility: clear keyboard focus indicator on all interactive controls. */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.tool-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+.tool-range input[type='range'] {
+    accent-color: var(--accent);
+    width: 96px;
+    cursor: pointer;
+}
+
+/* The selected curve's top line doubles as a horizontal move handle. */
+#graph-container .curve-move {
+    cursor: grab;
+}
+
+#graph-container .curve-move:active {
+    cursor: grabbing;
+}

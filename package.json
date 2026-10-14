@@ -1,0 +1,24 @@
+{
+    "name": "shift-left-right-builder",
+    "version": "0.0.0",
+    "description": "WYSIWYG shift-left/shift-right graph model builder — web app with .png/.svg export and URL-shareable models",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "build": "tsc --noEmit && tsdown",
+        "start": "tsdown -w",
+        "serve:web": "node ./scripts/serve-web.mjs"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@types/clean-css": "^4.2.11",
+        "@types/html-minifier-terser": "^7.0.2",
+        "@types/node": "^18.19.130",
+        "clean-css": "^5.3.3",
+        "html-minifier-terser": "^7.2.0",
+        "tsdown": "^0.21.10",
+        "typescript": "^5.8.3"
+    }
+}
