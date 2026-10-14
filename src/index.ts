@@ -218,12 +218,14 @@ const pngStore = createPngSettingsStore(PNG_SETTINGS_KEY, () => ({
     filename: 'shift-left-right.png',
     width: PNG_DEFAULT_WIDTH,
     transparent: false,
+    includeLegend: true,
     theme: isDarkMode() ? 'dark' : 'light',
 }));
 
 const svgStore = createSvgSettingsStore(SVG_SETTINGS_KEY, () => ({
     filename: 'shift-left-right.svg',
     transparent: false,
+    includeLegend: true,
     theme: isDarkMode() ? 'dark' : 'light',
 }));
 
@@ -233,6 +235,7 @@ function currentPngSheet(): { width: number; height: number } {
     return measurePngSheet(model, {
         dark: pngDialog.themeDarkRadio.checked,
         transparent: pngDialog.transparentInput.checked,
+        includeLegend: pngDialog.legendInput.checked,
     });
 }
 
@@ -264,6 +267,7 @@ const pngPreview = createExportDialog<PngSettings>(pngDialog, {
             dark: settings.theme === 'dark',
             scale,
             transparent: settings.transparent,
+            includeLegend: settings.includeLegend,
         }).catch((error: unknown) => {
             showWarning(`PNG export failed: ${String(error)}`);
         });
@@ -277,6 +281,7 @@ const pngRefresher = createPreviewRefresher(
         renderPngPreview(model, {
             dark: pngDialog.themeDarkRadio.checked,
             transparent: pngDialog.transparentInput.checked,
+            includeLegend: pngDialog.legendInput.checked,
         }),
     () => {
         pngSizeHint.textContent = 'Preview unavailable — the download will still be attempted.';
@@ -310,6 +315,7 @@ const svgPreview = createExportDialog(svgDialog, {
                 filename: settings.filename,
                 dark: settings.theme === 'dark',
                 transparent: settings.transparent,
+                includeLegend: settings.includeLegend,
             });
         } catch (error: unknown) {
             showWarning(`SVG export failed: ${String(error)}`);
@@ -323,6 +329,7 @@ const svgRefresher = createPreviewRefresher(
         const svgString = buildSvgString(model, {
             dark: svgDialog.themeDarkRadio.checked,
             transparent: svgDialog.transparentInput.checked,
+            includeLegend: svgDialog.legendInput.checked,
         });
         return new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     },

@@ -1,7 +1,8 @@
 /**
  * Shared behavior for the two export dialogs (PNG and SVG). Both have the same controls —
- * color-mode radios, transparent-background checkbox, file-name input, live preview, cancel /
- * download buttons — plus a PNG-only width field merged in via `readCommon`. This wires the
+ * color-mode radios, transparent-background and include-legend checkboxes, file-name input,
+ * live preview, cancel / download buttons — plus a PNG-only width field merged in via
+ * `readCommon`. This wires the
  * common DOM plumbing once; the caller supplies the settings store and the actual export.
  *
  * `collectDialogElements` looks a dialog's controls up by id prefix, and `createPreviewRefresher`
@@ -17,6 +18,7 @@ export interface DialogElements {
     themeLightRadio: HTMLInputElement;
     themeDarkRadio: HTMLInputElement;
     transparentInput: HTMLInputElement;
+    legendInput: HTMLInputElement;
     previewImg: HTMLImageElement;
     cancelButton: HTMLButtonElement;
     downloadButton: HTMLButtonElement;
@@ -33,16 +35,18 @@ export function collectDialogElements(prefix: string): DialogElements {
         themeLightRadio: mustFind<HTMLInputElement>(`${prefix}-theme-light`),
         themeDarkRadio: mustFind<HTMLInputElement>(`${prefix}-theme-dark`),
         transparentInput: mustFind<HTMLInputElement>(`${prefix}-transparent`),
+        legendInput: mustFind<HTMLInputElement>(`${prefix}-legend`),
         previewImg: mustFind<HTMLImageElement>(`${prefix}-preview-img`),
         cancelButton: mustFind<HTMLButtonElement>(`${prefix}-cancel`),
         downloadButton: mustFind<HTMLButtonElement>(`${prefix}-download`),
     };
 }
 
-/** The three controls every export dialog has, after normalization/validation. */
+/** The controls every export dialog has, after normalization/validation. */
 export interface CommonExportValues {
     filename: string;
     transparent: boolean;
+    includeLegend: boolean;
     theme: 'light' | 'dark';
 }
 
@@ -76,7 +80,12 @@ export function createExportDialog<T extends CommonExportValues>(
 
     el.cancelButton.addEventListener('click', () => el.dialog.close());
     closeOnBackdrop(el.dialog);
-    for (const control of [el.transparentInput, el.themeLightRadio, el.themeDarkRadio]) {
+    for (const control of [
+        el.transparentInput,
+        el.legendInput,
+        el.themeLightRadio,
+        el.themeDarkRadio,
+    ]) {
         control.addEventListener('change', () => options.onOptionsChanged());
     }
     el.downloadButton.addEventListener('click', () => {
@@ -87,6 +96,7 @@ export function createExportDialog<T extends CommonExportValues>(
                 options.extension
             ),
             transparent: el.transparentInput.checked,
+            includeLegend: el.legendInput.checked,
             theme: el.themeDarkRadio.checked ? 'dark' : 'light',
         });
         options.saveSettings(current);
@@ -99,6 +109,7 @@ export function createExportDialog<T extends CommonExportValues>(
             const settings = options.loadSettings();
             el.filenameInput.value = settings.filename;
             el.transparentInput.checked = settings.transparent;
+            el.legendInput.checked = settings.includeLegend;
             (settings.theme === 'dark' ? el.themeDarkRadio : el.themeLightRadio).checked = true;
             if (options.applyExtraSettings) options.applyExtraSettings(settings);
             el.dialog.showModal();

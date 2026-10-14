@@ -9,9 +9,9 @@
  * exported so the editor can place control-point handles and hit-test without duplicating math.
  */
 
+import { removeBadge, SVG_NS, svgEl, textEl } from './dom';
 import { MAX_CURVES, phasePositions, type Curve, type CurvePoint, type GraphModel } from './model';
 import { STYLE, type CanvasPalette, type FontRole, type GraphStyle } from './style';
-import { removeBadge, SVG_NS, svgEl, textEl } from './dom';
 
 export interface RenderOptions {
     style?: GraphStyle;
@@ -20,6 +20,8 @@ export interface RenderOptions {
     editing?: boolean;
     transparentBackground?: boolean;
     attribution?: boolean;
+    /** Exports may drop the legend block entirely; the editing canvas always shows it. */
+    includeLegend?: boolean;
 }
 
 interface Pt {
@@ -161,22 +163,27 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
 
     // Legend block below the phase labels. Rows are laid out in DISPLAY order (front-most curve
     // first), matching how renderGraphSvg paints them; consumers index this array by display slot.
+    // Exports can drop the whole block (includeLegend false); the editor always keeps it.
+    const includeLegend = options.includeLegend ?? true;
     const legendX = plotX0;
     const legendWidth = plotWidth - (L.legendSwatch + L.legendSwatchGap) - L.legendRemoveZone;
     const noteFont = fontSpec(style, 'legendNote');
     const labelLineH = style.font.legendLabel.size + 6;
     const noteLineH = style.font.legendNote.lineHeight;
-    const legendTop = phaseLabelY + (style.font.phaseLabel.size + 6) + L.legendGap;
+    const phaseBottom = phaseLabelY + (style.font.phaseLabel.size + 6);
+    const legendTop = includeLegend ? phaseBottom + L.legendGap : phaseBottom;
 
     let cursor = legendTop;
-    const legendRows: LegendRow[] = [...model.curves.keys()].reverse().map((curveIndex) => {
-        const curve = model.curves[curveIndex];
-        const noteLines = wrapText(curve.notes, legendWidth, noteFont);
-        const height = labelLineH + noteLines.length * noteLineH + L.legendRowGap;
-        const row: LegendRow = { top: cursor, height, label: curve.label, noteLines };
-        cursor += height;
-        return row;
-    });
+    const legendRows: LegendRow[] = includeLegend
+        ? [...model.curves.keys()].reverse().map((curveIndex) => {
+              const curve = model.curves[curveIndex];
+              const noteLines = wrapText(curve.notes, legendWidth, noteFont);
+              const height = labelLineH + noteLines.length * noteLineH + L.legendRowGap;
+              const row: LegendRow = { top: cursor, height, label: curve.label, noteLines };
+              cursor += height;
+              return row;
+          })
+        : [];
 
     const legendBottom = legendRows.length > 0 ? cursor : legendTop;
     // In the editor the legend reserves one extra row for the "+ Add curve" affordance.
@@ -668,12 +675,13 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
 
     // Legend below: one editable block per curve (first line = label, rest = notes). Rows are
     // displayed in REVERSE paint order: the front-most curve (last in the model) sits on top.
+    // When an export drops the legend, geom.legendRows is empty and this loop paints nothing.
     const legendGroup = svgEl('g', { class: 'legend' });
     const labelLineH = style.font.legendLabel.size + 6;
     const noteLineH = style.font.legendNote.lineHeight;
     const displayOrder = [...model.curves.keys()].reverse();
-    displayOrder.forEach((curveIndex, slot) => {
-        const row = geom.legendRows[slot];
+    geom.legendRows.forEach((row, slot) => {
+        const curveIndex = displayOrder[slot];
         const curve = model.curves[curveIndex];
         const swatchX = geom.legendX + L.legendRemoveZone;
         const textX = swatchX + L.legendSwatch + L.legendSwatchGap;

@@ -23,6 +23,7 @@ export interface SvgExportOptions {
     filename: string;
     dark: boolean;
     transparent: boolean;
+    includeLegend: boolean;
 }
 
 export interface PngExportOptions {
@@ -31,18 +32,20 @@ export interface PngExportOptions {
     /** Rasterization pixel ratio; 2 gives retina quality. */
     scale: number;
     transparent: boolean;
+    includeLegend: boolean;
 }
 
 /** Standalone SVG document string for the model in the given color mode / background. */
 export function buildSvgString(
     model: GraphModel,
-    options: { dark: boolean; transparent: boolean }
+    options: { dark: boolean; transparent: boolean; includeLegend: boolean }
 ): string {
     const { svg } = renderGraphSvg(model, {
         style: STYLE,
         dark: options.dark,
         attribution: true,
         transparentBackground: options.transparent,
+        includeLegend: options.includeLegend,
     });
     return serializeSvg(svg);
 }
@@ -60,12 +63,18 @@ interface PngSheet {
     height: number;
 }
 
-function buildPngSheet(model: GraphModel, dark: boolean, transparent: boolean): PngSheet {
+function buildPngSheet(
+    model: GraphModel,
+    dark: boolean,
+    transparent: boolean,
+    includeLegend: boolean
+): PngSheet {
     const { svg, geom } = renderGraphSvg(model, {
         style: STYLE,
         dark,
         attribution: true,
         transparentBackground: transparent,
+        includeLegend,
     });
     return { svgString: serializeSvg(svg), width: geom.width, height: geom.height };
 }
@@ -105,7 +114,7 @@ async function rasterizeSheet(
 }
 
 export async function exportPng(model: GraphModel, options: PngExportOptions): Promise<void> {
-    const sheet = buildPngSheet(model, options.dark, options.transparent);
+    const sheet = buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
     const blob = await rasterizeSheet(sheet, options.dark, options.transparent, options.scale);
     triggerDownload(URL.createObjectURL(blob), options.filename);
 }
@@ -113,12 +122,13 @@ export async function exportPng(model: GraphModel, options: PngExportOptions): P
 /** Sheet size in pixels at scale 1 — layout only, no SVG build or rasterization. */
 export function measurePngSheet(
     model: GraphModel,
-    options: { dark: boolean; transparent: boolean }
+    options: { dark: boolean; transparent: boolean; includeLegend: boolean }
 ): { width: number; height: number } {
     const geom = computeLayout(model, {
         style: STYLE,
         dark: options.dark,
         transparentBackground: options.transparent,
+        includeLegend: options.includeLegend,
     });
     return { width: geom.width, height: geom.height };
 }
@@ -126,10 +136,10 @@ export function measurePngSheet(
 /** Small rasterized preview for the export dialog (never above scale 1). */
 export async function renderPngPreview(
     model: GraphModel,
-    options: { dark: boolean; transparent: boolean },
+    options: { dark: boolean; transparent: boolean; includeLegend: boolean },
     maxWidth = 320
 ): Promise<Blob> {
-    const sheet = buildPngSheet(model, options.dark, options.transparent);
+    const sheet = buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
     const scale = Math.min(1, maxWidth / sheet.width);
     return rasterizeSheet(sheet, options.dark, options.transparent, scale);
 }

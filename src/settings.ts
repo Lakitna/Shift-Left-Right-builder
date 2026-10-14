@@ -1,11 +1,13 @@
 /**
  * Persisted export-dialog settings (PNG and SVG). Both dialogs store the same shape — filename,
- * color theme, transparent background — so one small typed store covers them; PNG adds a width.
+ * color theme, transparent background, include-legend — so one small typed store covers them;
+ * PNG adds a width.
  */
 
 export interface ExportSettingsBase {
     filename: string;
     transparent: boolean;
+    includeLegend: boolean;
     theme: 'light' | 'dark';
 }
 
@@ -86,6 +88,7 @@ function validateBase(
     return {
         filename: textOr(stored.filename, fallback.filename),
         transparent: boolOr(stored.transparent, fallback.transparent),
+        includeLegend: boolOr(stored.includeLegend, fallback.includeLegend),
         theme: themeOr(stored.theme, fallback.theme),
     };
 }
