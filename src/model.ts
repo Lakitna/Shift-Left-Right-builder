@@ -28,6 +28,12 @@ export interface Curve {
     label: string;
     /** Fill/stroke color as #rrggbb. */
     color: string;
+    /**
+     * True once the user picks a color for this curve. Palette styles paint their own
+     * positional colors over `color`; a custom curve always renders solid in it (mirrors
+     * the reference app's layer `colorCustom`). Omitted (false) in the URL wire format.
+     */
+    colorCustom?: boolean;
     /** Free text shown in the legend below the graph. */
     notes: string;
     /** Control points, kept sorted by ascending x. Between MIN_POINTS and MAX_POINTS entries. */
@@ -141,6 +147,7 @@ export function cloneModel(source: GraphModel): GraphModel {
         curves: source.curves.map((curve) => ({
             label: curve.label,
             color: curve.color,
+            ...(curve.colorCustom === true ? { colorCustom: true } : {}),
             notes: curve.notes,
             smooth: curve.smooth,
             opacity: curve.opacity,
@@ -182,7 +189,16 @@ function parseCurve(input: unknown): Curve | null {
     points.sort((a, b) => a.x - b.x);
 
     const opacity = typeof obj.opacity === 'number' ? clampOpacity(obj.opacity) : DEFAULT_OPACITY;
-    return { label, color: color.toLowerCase(), notes, points, smooth, opacity };
+    if (obj.colorCustom !== undefined && typeof obj.colorCustom !== 'boolean') return null;
+    return {
+        label,
+        color: color.toLowerCase(),
+        ...(obj.colorCustom === true ? { colorCustom: true } : {}),
+        notes,
+        points,
+        smooth,
+        opacity,
+    };
 }
 
 function parsePhase(input: unknown): Phase | null {

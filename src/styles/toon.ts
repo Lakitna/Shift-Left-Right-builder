@@ -1,0 +1,155 @@
+import type { GraphStyle } from './types';
+
+const BALOO = "'Baloo 2'";
+const COMIC = "'Comic Neue'";
+const STACK = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+
+/**
+ * Cartoon: wobbly ink outlines around every curve, rounded corners, sticker-shadow bubble
+ * labels and a saturated playful palette on warm paper. Drawn by an enthusiastic inker.
+ */
+export const toonStyle: GraphStyle = {
+    id: 'toon',
+    name: 'Cartoon',
+    typography: {
+        fallback: STACK,
+        roles: {
+            title: { family: BALOO, weight: 800, size: 22 },
+            axisTitle: { family: BALOO, weight: 600, size: 14 },
+            phaseLabel: { family: BALOO, weight: 600, size: 14 },
+            eventLabel: { family: BALOO, weight: 800, size: 13 },
+            eventNote: { family: COMIC, weight: 400, size: 12.5, lineHeight: 17 },
+            tickLabel: { family: COMIC, weight: 700, size: 12 },
+            curveLabel: { family: BALOO, weight: 600, size: 15 },
+            legendLabel: { family: BALOO, weight: 600, size: 14 },
+            legendNote: { family: COMIC, weight: 400, size: 13, lineHeight: 17 },
+        },
+        fonts: [
+            ['Baloo 2', 600],
+            ['Baloo 2', 800],
+            ['Comic Neue', 400],
+            ['Comic Neue', 700],
+        ],
+    },
+    canvas: {
+        light: {
+            background: '#fff7ea',
+            axis: '#16130e',
+            grid: '#f0e2c8',
+            phaseTick: '#e6d5b3',
+            phaseLabel: '#16130e',
+            eventLine: '#16130e',
+            eventLabel: '#16130e',
+            tickLabel: '#463c2e',
+            title: '#16130e',
+            axisTitle: '#16130e',
+            curveLabel: '#16130e',
+            curveLabelHalo: '#ffffff',
+            legendText: '#16130e',
+            legendMuted: '#463c2e',
+            legendSwatchStroke: '#16130e',
+            ink: '#16130e',
+            chip: '#ffffff',
+            chipStroke: '#16130e',
+            chipText: '#16130e',
+            hint: '#b3a88f',
+        },
+        dark: {
+            // Night-time comic: the ink stays BLACK (cartoon means black lines, day or
+            // night) — it reads as seams between the saturated fills and borders the white
+            // bubbles. The title turns candy yellow so the sheet still feels lit up.
+            background: '#191d2a',
+            axis: '#e8ecf5',
+            grid: '#232a3d',
+            phaseTick: '#2c3450',
+            phaseLabel: '#fff9ef',
+            eventLine: '#e8ecf5',
+            eventLabel: '#e8ecf5',
+            tickLabel: '#e8ecf5',
+            title: '#ffd94d',
+            axisTitle: '#ffd94d',
+            curveLabel: '#16130e',
+            curveLabelHalo: '#ffffff',
+            legendText: '#fff9ef',
+            legendMuted: '#e8ecf5',
+            legendSwatchStroke: '#0d0f16',
+            ink: '#0d0f16',
+            chip: '#ffffff',
+            chipStroke: '#0d0f16',
+            chipText: '#16130e',
+            hint: '#5f6b85',
+        },
+    },
+    fills: {
+        mode: 'solid',
+        patterns: [{ name: 'none' }],
+        patternSpacing: 6,
+        patternStroke: 1,
+        patternOpacity: 1,
+    },
+    stroke: { curveOutline: 4 },
+    jitter: { amplitude: 5, segmentLength: 22, salt: 7 },
+    label: {
+        mode: 'bubble',
+        rx: 12,
+        padX: 10,
+        height: 32,
+        borderWidth: 2.5,
+        shadowOffset: 3,
+        haloWidth: 0,
+    },
+    frame: 'single',
+    sparkles: null,
+    curves: {
+        colorSource: 'palette',
+        palette: {
+            light: ['#ff5d5d', '#12b5a5', '#f7c948', '#4d96ff', '#9b5de5', '#ff9f45'],
+            // Dark mode: same candy, pushed to maximum saturation so the fills glow.
+            dark: ['#ff4d4d', '#00d9b0', '#ffcc33', '#4d94ff', '#b366ff', '#ff8c1a'],
+        },
+    },
+    layout: {
+        plotWidth: 920,
+        plotHeight: 460,
+        margin: { top: 28, right: 76, bottom: 24, left: 64 },
+        titleSpace: 44,
+        titleGap: 18,
+        phaseLabelGap: 32,
+        legendGap: 26,
+        eventLabelGap: 16,
+        eventNoteLineH: 17,
+        eventLeader: 10,
+        eventBandPad: 8,
+        eventCalloutMaxWidth: 200,
+        legendRowGap: 12,
+        legendSwatch: 16,
+        legendSwatchGap: 10,
+        legendRemoveZone: 42,
+    },
+    chrome: {
+        light: {
+            '--background': '#ffefdb',
+            '--surface': '#fff7ea',
+            '--border': '#d9c8ab',
+            '--text': '#16130e',
+            '--text-muted': '#8a7a63',
+            '--accent': '#4d96ff',
+            '--danger': '#e03131',
+            '--hover': '#f7e8d2',
+            '--font-ui': `${BALOO}, ${STACK}`,
+        },
+        dark: {
+            '--background': '#12151f',
+            '--surface': '#191d2a',
+            '--border': '#2c3450',
+            '--text': '#fff9ef',
+            '--text-muted': '#9aa4b8',
+            '--accent': '#6daaff',
+            '--danger': '#ff6b6b',
+            '--hover': '#232a3d',
+            '--font-ui': `${BALOO}, ${STACK}`,
+        },
+    },
+    curveStrokeWidth: 2,
+    pointRadius: 6,
+};

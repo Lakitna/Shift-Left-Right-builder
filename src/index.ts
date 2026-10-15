@@ -22,11 +22,25 @@ import {
     PNG_DEFAULT_WIDTH,
     type PngSettings,
 } from './settings';
+import { ensureFontFaces, loadStyleFonts } from './fonts';
+import { DEFAULT_STYLE_ID, STYLES } from './styles';
+import { validateAllStyles } from './styles/validate';
+import {
+    applyChromeVars,
+    getActiveStyle,
+    getActiveStyleId,
+    readStoredStyleId,
+    setActiveStyle,
+} from './styleState';
 import { initTheme, isDarkMode, toggleTheme } from './theme';
 import { flashButton, mustFind } from './ui';
 import { readHash, writeStateToHash } from './urlState';
 
 initTheme();
+// Style before first render: chrome CSS vars must be right from the start. The URL (read in
+// loadFromHash) still wins over localStorage, but never overwrites the viewer's own preference.
+setActiveStyle(readStoredStyleId() ?? DEFAULT_STYLE_ID, false);
+ensureFontFaces(getActiveStyle().typography.fonts);
 
 const DEFAULT_MODEL = PRESETS[0];
 const URL_SYNC_DELAY_MS = 250;
@@ -41,6 +55,8 @@ const warningBanner = mustFind<HTMLElement>('warning');
 const copyButton = mustFind<HTMLButtonElement>('btn-copy-link');
 const shareButton = mustFind<HTMLButtonElement>('btn-share');
 const shareMenu = mustFind<HTMLElement>('share-menu');
+const styleButton = mustFind<HTMLButtonElement>('btn-style');
+const styleMenu = mustFind<HTMLElement>('style-menu');
 const themeButton = mustFind<HTMLButtonElement>('btn-theme');
 
 const pngDialog = collectDialogElements('png');
@@ -104,20 +120,21 @@ function syncUrl(): void {
     cancelUrlSync();
     urlTimer = window.setTimeout(() => {
         urlTimer = undefined;
-        void writeStateToHash(model);
+        void writeStateToHash(model, getActiveStyleId());
     }, URL_SYNC_DELAY_MS);
 }
 
 /** Immediate hash update; resolves once the URL carries the current model. */
 async function syncUrlNow(): Promise<void> {
     cancelUrlSync();
-    await writeStateToHash(model);
+    await writeStateToHash(model, getActiveStyleId());
 }
 
 function render(): void {
     warningBanner.hidden = warningMessage === '';
     warningBanner.textContent = warningMessage;
     updateThemeButton();
+    renderStyleMenu();
     editor.render();
     syncUrl();
 }
@@ -130,6 +147,8 @@ function updateThemeButton(): void {
 
 themeButton.addEventListener('click', () => {
     toggleTheme();
+    // The active style carries its own dark chrome tokens — rewrite them for the new mode.
+    applyChromeVars();
     updateThemeButton();
     editor.render();
 });
@@ -173,8 +192,63 @@ window.addEventListener('keydown', (event) => {
         event.preventDefault();
         editor.deleteSelected();
     } else if (event.key === 'Escape') {
-        editor.clearSelection();
+        if (!styleMenu.hidden) {
+            setStyleMenuOpen(false);
+        } else if (!shareMenu.hidden) {
+            setShareMenuOpen(false);
+        } else {
+            editor.clearSelection();
+        }
     }
+});
+
+// --- Style selector ----------------------------------------------------------
+
+function setStyleMenuOpen(open: boolean): void {
+    styleMenu.hidden = !open;
+    styleButton.setAttribute('aria-expanded', String(open));
+}
+
+/**
+ * Rebuild the dropdown: one entry per registered style (first four curve-palette colors as
+ * swatches + the name), marking the active one, and refresh the button caption. Called from
+ * render() so the menu follows both style and theme changes.
+ */
+function renderStyleMenu(): void {
+    styleMenu.textContent = '';
+    const dark = isDarkMode();
+    for (const style of STYLES) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        if (style.id === getActiveStyleId()) button.classList.add('active');
+        const swatches = document.createElement('span');
+        swatches.className = 'style-swatches';
+        const palette = dark ? style.curves.palette.dark : style.curves.palette.light;
+        for (const color of palette.slice(0, 4)) {
+            const swatch = document.createElement('span');
+            swatch.className = 'style-swatch';
+            swatch.style.background = color;
+            swatches.appendChild(swatch);
+        }
+        const name = document.createElement('span');
+        name.textContent = style.name;
+        button.append(swatches, name);
+        button.addEventListener('click', () => {
+            const applied = setActiveStyle(style.id);
+            setStyleMenuOpen(false);
+            render();
+            // A second repaint once the new style's fonts resolve: textWidth() measures with
+            // canvas metrics, so wrapping and chip sizing change with the real typeface.
+            void loadStyleFonts(applied).then(() => render());
+        });
+        styleMenu.appendChild(button);
+    }
+    styleButton.textContent = `Style: ${getActiveStyle().name} ▾`;
+}
+
+styleButton.addEventListener('click', () => {
+    // Open when hidden, close when visible (hidden === open-state inverted).
+    setStyleMenuOpen(styleMenu.hidden === true);
 });
 
 // --- Share menu --------------------------------------------------------------
@@ -193,6 +267,8 @@ document.addEventListener('pointerdown', (event) => {
     const target = event.target;
     const inside = target instanceof Element && target.closest('.share-wrap') !== null;
     if (!shareMenu.hidden && !inside) setShareMenuOpen(false);
+    const insideStyle = target instanceof Element && target.closest('.style-wrap') !== null;
+    if (!styleMenu.hidden && !insideStyle) setStyleMenuOpen(false);
 });
 
 async function copyLink(): Promise<void> {
@@ -310,23 +386,21 @@ const svgPreview = createExportDialog(svgDialog, {
     readCommon: (current, common) => ({ ...current, ...common }),
     onOptionsChanged: refreshSvgPreview,
     onDownload: (settings) => {
-        try {
-            exportSvg(model, {
-                filename: settings.filename,
-                dark: settings.theme === 'dark',
-                transparent: settings.transparent,
-                includeLegend: settings.includeLegend,
-            });
-        } catch (error: unknown) {
+        exportSvg(model, {
+            filename: settings.filename,
+            dark: settings.theme === 'dark',
+            transparent: settings.transparent,
+            includeLegend: settings.includeLegend,
+        }).catch((error: unknown) => {
             showWarning(`SVG export failed: ${String(error)}`);
-        }
+        });
     },
 });
 
 const svgRefresher = createPreviewRefresher(
     svgPreview,
     async () => {
-        const svgString = buildSvgString(model, {
+        const svgString = await buildSvgString(model, {
             dark: svgDialog.themeDarkRadio.checked,
             transparent: svgDialog.transparentInput.checked,
             includeLegend: svgDialog.legendInput.checked,
@@ -349,6 +423,11 @@ mustFind<HTMLButtonElement>('btn-export-svg').addEventListener('click', () => {
 
 async function loadFromHash(): Promise<void> {
     const hash = await readHash();
+    if (hash.styleId !== null) {
+        // A shared link's style wins for this page load, but persist=false keeps it from
+        // overwriting the viewer's own stored preference.
+        setActiveStyle(hash.styleId, false);
+    }
     if (hash.model !== null) {
         model = hash.model;
         warningMessage = '';
@@ -356,6 +435,8 @@ async function loadFromHash(): Promise<void> {
         model = cloneModel(DEFAULT_MODEL.data);
         warningMessage = hash.present ? INVALID_HASH_MESSAGE : '';
     }
+    // Gate the first paint on the style's fonts — layout math measures text.
+    await loadStyleFonts(getActiveStyle());
     history.reset(model);
     render();
 }
@@ -363,3 +444,13 @@ async function loadFromHash(): Promise<void> {
 window.addEventListener('hashchange', () => void loadFromHash());
 
 void loadFromHash();
+
+// Dev hook: `?validate-styles` logs every style's WCAG contrast issues.
+if (window.location.search.includes('validate-styles')) {
+    const issues = validateAllStyles();
+    if (issues.length === 0) {
+        console.log('[styles] all checks passed');
+    } else {
+        console.log('[styles] contrast issues:', issues);
+    }
+}

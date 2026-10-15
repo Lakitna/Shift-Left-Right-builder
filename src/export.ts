@@ -1,13 +1,14 @@
 /**
  * Image export. Both formats render a FRESH SVG from the model (never the editing overlays), so
- * selection UI never leaks into files. v1 uses the system font stack, so no font embedding is
- * needed — the browser rasterizes the SVG data-URL with the same system fonts, keeping the canvas
- * untainted and the export offline-faithful.
+ * selection UI never leaks into files. Exports are WYSIWYG for the ACTIVE style: the same
+ * `renderGraphSvg` path runs, and the style's bundled fonts are inlined as base64 `@font-face`
+ * data URIs so SVG/PNG leave the page with the real typefaces, offline and untainted.
  */
 
+import { embeddedFontFaceCss } from './fonts';
 import type { GraphModel } from './model';
 import { computeLayout, renderGraphSvg, serializeSvg } from './render';
-import { STYLE } from './style';
+import { getActiveStyle } from './styleState';
 
 function triggerDownload(objectUrl: string, filename: string): void {
     const anchor = document.createElement('a');
@@ -36,22 +37,25 @@ export interface PngExportOptions {
 }
 
 /** Standalone SVG document string for the model in the given color mode / background. */
-export function buildSvgString(
+export async function buildSvgString(
     model: GraphModel,
     options: { dark: boolean; transparent: boolean; includeLegend: boolean }
-): string {
+): Promise<string> {
+    const style = getActiveStyle();
     const { svg } = renderGraphSvg(model, {
-        style: STYLE,
+        style,
         dark: options.dark,
         attribution: true,
         transparentBackground: options.transparent,
         includeLegend: options.includeLegend,
     });
-    return serializeSvg(svg);
+    return serializeSvg(svg, {
+        embedFontCss: await embeddedFontFaceCss(style.typography.fonts),
+    });
 }
 
-export function exportSvg(model: GraphModel, options: SvgExportOptions): void {
-    const blob = new Blob([buildSvgString(model, options)], {
+export async function exportSvg(model: GraphModel, options: SvgExportOptions): Promise<void> {
+    const blob = new Blob([await buildSvgString(model, options)], {
         type: 'image/svg+xml;charset=utf-8',
     });
     triggerDownload(URL.createObjectURL(blob), options.filename);
@@ -63,20 +67,27 @@ interface PngSheet {
     height: number;
 }
 
-function buildPngSheet(
+async function buildPngSheet(
     model: GraphModel,
     dark: boolean,
     transparent: boolean,
     includeLegend: boolean
-): PngSheet {
+): Promise<PngSheet> {
+    const style = getActiveStyle();
     const { svg, geom } = renderGraphSvg(model, {
-        style: STYLE,
+        style,
         dark,
         attribution: true,
         transparentBackground: transparent,
         includeLegend,
     });
-    return { svgString: serializeSvg(svg), width: geom.width, height: geom.height };
+    return {
+        svgString: serializeSvg(svg, {
+            embedFontCss: await embeddedFontFaceCss(style.typography.fonts),
+        }),
+        width: geom.width,
+        height: geom.height,
+    };
 }
 
 async function rasterizeSheet(
@@ -101,7 +112,8 @@ async function rasterizeSheet(
         throw new Error('Canvas 2D rendering context is not available');
     }
     if (!transparent) {
-        context.fillStyle = (dark ? STYLE.dark : STYLE.light).background;
+        const style = getActiveStyle();
+        context.fillStyle = (dark ? style.canvas.dark : style.canvas.light).background;
         context.fillRect(0, 0, canvas.width, canvas.height);
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -114,7 +126,7 @@ async function rasterizeSheet(
 }
 
 export async function exportPng(model: GraphModel, options: PngExportOptions): Promise<void> {
-    const sheet = buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
+    const sheet = await buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
     const blob = await rasterizeSheet(sheet, options.dark, options.transparent, options.scale);
     triggerDownload(URL.createObjectURL(blob), options.filename);
 }
@@ -125,7 +137,7 @@ export function measurePngSheet(
     options: { dark: boolean; transparent: boolean; includeLegend: boolean }
 ): { width: number; height: number } {
     const geom = computeLayout(model, {
-        style: STYLE,
+        style: getActiveStyle(),
         dark: options.dark,
         transparentBackground: options.transparent,
         includeLegend: options.includeLegend,
@@ -139,7 +151,7 @@ export async function renderPngPreview(
     options: { dark: boolean; transparent: boolean; includeLegend: boolean },
     maxWidth = 320
 ): Promise<Blob> {
-    const sheet = buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
+    const sheet = await buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
     const scale = Math.min(1, maxWidth / sheet.width);
     return rasterizeSheet(sheet, options.dark, options.transparent, scale);
 }

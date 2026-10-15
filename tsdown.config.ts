@@ -42,6 +42,7 @@ export default defineConfig({
     copy: [
         { from: 'src/index.html', to: 'dist/web' },
         { from: 'src/styles.css', to: 'dist/web' },
+        { from: 'src/fonts/*.woff2', to: 'dist/web/fonts' },
     ],
     hooks: {
         'build:done': () => minifyStaticAssets(),

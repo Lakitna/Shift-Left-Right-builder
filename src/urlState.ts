@@ -17,6 +17,9 @@
  * `title` and `yAxisTitle` are always written (as "" when unset) so the decoded model satisfies
  * the strict shape `parseModel` requires. The in-memory model keeps its explicit object shape;
  * only this encoding is compact.
+ *
+ * The visual style is chrome, not model data: it travels as a sibling `#s=` hash parameter
+ * (omitted for the default 'classic'), never inside the `#p=` payload.
  */
 
 import {
@@ -26,12 +29,16 @@ import {
     type CurvePoint,
     type GraphModel,
 } from './model';
+import { DEFAULT_STYLE_ID, isValidStyleId } from './styles';
 
 const HASH_PARAM = 'p';
+const STYLE_PARAM = 's';
 
 interface WireCurve {
     label: string;
     color: string;
+    /** Only present when true — the default (style palette / stored color) is omitted. */
+    colorCustom?: true;
     notes?: string;
     smooth?: boolean;
     opacity?: number;
@@ -66,6 +73,7 @@ function toWire(model: GraphModel): WireModel {
                 color: curve.color,
                 points: curve.points.map((point): [number, number] => [point.x, point.y]),
             };
+            if (curve.colorCustom === true) entry.colorCustom = true;
             if (curve.notes !== '') entry.notes = curve.notes;
             if (!curve.smooth) entry.smooth = false;
             if (curve.opacity !== DEFAULT_OPACITY) entry.opacity = curve.opacity;
@@ -86,6 +94,7 @@ function fromWire(wire: WireModel): unknown {
         curves: wire.curves.map((curve) => ({
             label: curve.label,
             color: curve.color,
+            ...(curve.colorCustom === true ? { colorCustom: true } : {}),
             notes: curve.notes ?? '',
             smooth: curve.smooth ?? true,
             opacity: curve.opacity ?? DEFAULT_OPACITY,
@@ -169,24 +178,30 @@ export interface HashReadResult {
     model: GraphModel | null;
     /** Whether the hash contained model data at all (even if invalid). */
     present: boolean;
+    /** The shared style id, or null when absent/unknown (the viewer's own preference applies). */
+    styleId: string | null;
 }
 
 export async function readHash(): Promise<HashReadResult> {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const styleParam = params.get(STYLE_PARAM);
+    const styleId = styleParam !== null && isValidStyleId(styleParam) ? styleParam : null;
     const value = params.get(HASH_PARAM);
     if (value === null || value === '') {
-        return { model: null, present: false };
+        return { model: null, present: false, styleId };
     }
-    return { model: await decodeModel(value), present: true };
+    return { model: await decodeModel(value), present: true, styleId };
 }
 
 /**
- * Write the model into the URL hash without adding a history entry. Callers that must read the
- * fresh URL back (copy-link) await this; the debounced sync fires and forgets.
+ * Write the model + active style into the URL hash without adding a history entry. Callers that
+ * must read the fresh URL back (copy-link) await this; the debounced sync fires and forgets.
+ * `s=` is omitted for the default style so pre-style links stay short.
  */
-export async function writeStateToHash(model: GraphModel): Promise<void> {
+export async function writeStateToHash(model: GraphModel, styleId: string): Promise<void> {
     const encoded = await encodeModel(model);
     const params = new URLSearchParams();
     params.set(HASH_PARAM, encoded);
+    if (styleId !== DEFAULT_STYLE_ID) params.set(STYLE_PARAM, styleId);
     window.history.replaceState(null, '', `#${params.toString()}`);
 }

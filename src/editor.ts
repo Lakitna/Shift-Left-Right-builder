@@ -53,16 +53,15 @@ import {
     calloutAnchor,
     curveAreaPath,
     curveLinePath,
+    effectiveCurveSwatchColor,
     pointPx,
     renderGraphSvg,
     segmentMidpoint,
     type GraphGeom,
 } from './render';
-import { STYLE } from './style';
+import { getActiveStyle } from './styleState';
 import { isDarkMode } from './theme';
 import { makeCheck, makeElement } from './ui';
-
-const ACCENT = { light: '#002fa7', dark: '#6c8cff' };
 
 export interface EditorHost {
     getModel(): GraphModel;
@@ -142,8 +141,10 @@ export function createEditor(
         return host.getModel();
     }
 
+    /** The editor accent (selection rings, handles, "+" badges) follows the style's canvas accent. */
     function accent(): string {
-        return isDarkMode() ? ACCENT.dark : ACCENT.light;
+        const canvas = getActiveStyle().canvas;
+        return (isDarkMode() ? canvas.dark : canvas.light).eventLabel;
     }
 
     // --- Toolbar -------------------------------------------------------------
@@ -385,7 +386,7 @@ export function createEditor(
             selectedPoint = null;
         }
         const dark = isDarkMode();
-        const result = renderGraphSvg(m, { style: STYLE, dark, editing: true });
+        const result = renderGraphSvg(m, { style: getActiveStyle(), dark, editing: true });
         svg = result.svg;
         geom = result.geom; // the editor reuses the layout the SVG was built with
         canvasEl.replaceChildren(svg);
@@ -408,7 +409,7 @@ export function createEditor(
                         d: curveLinePath(curve, g),
                         fill: 'none',
                         stroke: acc,
-                        'stroke-width': STYLE.curveStrokeWidth + 3,
+                        'stroke-width': g.style.curveStrokeWidth + 3,
                         'stroke-opacity': 0.35,
                         'stroke-linecap': 'round',
                         'stroke-linejoin': 'round',
@@ -423,7 +424,7 @@ export function createEditor(
                         svgEl('circle', {
                             cx: p.x,
                             cy: p.y,
-                            r: STYLE.pointRadius,
+                            r: g.style.pointRadius,
                             class: 'point-handle',
                             'data-handle-index': index,
                             fill: isSelected ? acc : '#ffffff',
@@ -497,9 +498,13 @@ export function createEditor(
     function updateCurveColor(index: number): void {
         const curve = model().curves[index];
         const paths = updateCurvePaths(index);
-        if (curve === undefined || paths === null) return;
+        if (curve === undefined || paths === null || geom === null) return;
         paths.fill.setAttribute('fill', curve.color);
-        paths.line.setAttribute('stroke', curve.color);
+        // A picked color is a custom SOLID fill; styles with an ink outline keep their
+        // stroked top edge in ink regardless of the fill.
+        if (geom.style.stroke.curveOutline === 0) {
+            paths.line.setAttribute('stroke', curve.color);
+        }
         // The invisible hit band is a wide stroke too — keep it transparent so the hover
         // highlight never paints through it.
         paths.hit.setAttribute('stroke', 'transparent');
@@ -541,7 +546,7 @@ export function createEditor(
             px,
             g.plotX0,
             g.plotX1,
-            STYLE.layout.eventCalloutMaxWidth
+            g.style.layout.eventCalloutMaxWidth
         );
         const dm = 5;
         const byY = g.baselineY;
@@ -929,12 +934,17 @@ export function createEditor(
         const canvasRect = canvasEl.getBoundingClientRect();
         const box = swatch.getBoundingClientRect();
         // Scale between the SVG's user units and its rendered size (the canvas can scroll/zoom).
-        const scale = box.width / STYLE.layout.legendSwatch;
+        const scale = box.width / geom.style.layout.legendSwatch;
         const overlaySize = Math.max(48, 30 * scale);
         const input = document.createElement('input');
         input.type = 'color';
         input.className = 'inline-color';
-        input.value = /^#[0-9a-f]{6}$/i.test(curve.color) ? curve.color : '#000000';
+        // Seed from the color the swatch actually SHOWS: palette styles override the stored
+        // curve color, and picking should start from what the user sees, not from stale data.
+        const seed = curve.colorCustom === true
+            ? curve.color
+            : effectiveCurveSwatchColor(geom.style, curve, index, geom.dark);
+        input.value = /^#[0-9a-f]{6}$/i.test(seed) ? seed : '#000000';
         input.style.position = 'absolute';
         input.style.left = `${Math.max(0, box.left - canvasRect.left + canvasEl.scrollLeft - (overlaySize - box.width) / 2)}px`;
         input.style.top = `${Math.max(0, box.top - canvasRect.top + canvasEl.scrollTop - (overlaySize - box.height) / 2)}px`;
@@ -962,6 +972,7 @@ export function createEditor(
         };
         input.addEventListener('input', () => {
             curve.color = input.value;
+            curve.colorCustom = true;
             updateCurveColor(index);
             swatch.setAttribute('fill', input.value);
             host.onLive();

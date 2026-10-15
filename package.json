@@ -6,6 +6,7 @@
     "private": true,
     "scripts": {
         "build": "tsc --noEmit && tsdown",
+        "build:fonts": "node ./scripts/build-font.mjs",
         "start": "tsdown -w",
         "serve:web": "node ./scripts/serve-web.mjs"
     },
@@ -13,6 +14,15 @@
     "author": "",
     "license": "ISC",
     "devDependencies": {
+        "@fontsource/atkinson-hyperlegible": "^5.3.0",
+        "@fontsource/baloo-2": "^5.3.0",
+        "@fontsource/comic-neue": "^5.3.0",
+        "@fontsource/fredoka": "^5.3.0",
+        "@fontsource/ibm-plex-mono": "^5.3.0",
+        "@fontsource/jost": "^5.3.0",
+        "@fontsource/montserrat": "^5.3.0",
+        "@fontsource/patrick-hand": "^5.3.0",
+        "@fontsource/quicksand": "^5.3.0",
         "@types/clean-css": "^4.2.11",
         "@types/html-minifier-terser": "^7.0.2",
         "@types/node": "^18.19.130",
