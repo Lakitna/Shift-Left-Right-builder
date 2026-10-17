@@ -6,34 +6,38 @@ export const SVG_NS = 'http://www.w3.org/2000/svg';
 
 export function svgEl<Tag extends keyof SVGElementTagNameMap>(
     tag: Tag,
-    attrs: Record<string, string | number>
+    attributes: Record<string, string | number>
 ): SVGElementTagNameMap[Tag] {
     const element = document.createElementNS(SVG_NS, tag);
-    for (const [name, value] of Object.entries(attrs)) {
+    for (const [name, value] of Object.entries(attributes)) {
         element.setAttribute(name, String(value));
     }
     return element;
 }
 
-export function textEl(content: string, attrs: Record<string, string | number>): SVGTextElement {
-    const element = svgEl('text', attrs);
+export function textEl(content: string, attributes: Record<string, string | number>): SVGTextElement {
+    const element = svgEl('text', attributes);
     element.textContent = content;
     return element;
 }
 
-/** A hover-revealed circular "✕" button group (used to remove a phase or a legend curve). */
+/**
+A hover-revealed circular "✕" button group (used to remove a phase or a legend curve).
+*/
 export function removeBadge(
     cx: number,
     cy: number,
     radius: number,
     fontSize: number,
-    /** Baseline offset below `cy` for the glyph (kept per-badge so sizes match the old layout). */
+    /**
+    Baseline offset below `cy` for the glyph (kept per-badge so sizes match the old layout).
+    */
     textOffset: number,
     palette: { background: string; legendSwatchStroke: string; phaseLabel: string },
-    attrs: Record<string, string | number>
+    attributes: Record<string, string | number>
 ): SVGGElement {
-    const group = svgEl('g', attrs);
-    group.appendChild(
+    const group = svgEl('g', attributes);
+    group.append(
         svgEl('circle', {
             cx,
             cy,
@@ -43,7 +47,7 @@ export function removeBadge(
             'stroke-width': 1,
         })
     );
-    group.appendChild(
+    group.append(
         textEl('✕', {
             x: cx,
             y: cy + textOffset,
@@ -56,18 +60,20 @@ export function removeBadge(
     return group;
 }
 
-/** A white circular "+" affordance (insert point on a curve, add a phase). */
+/**
+A white circular "+" affordance (insert point on a curve, add a phase).
+*/
 export function addBadge(
     cx: number,
     cy: number,
     color: string,
-    attrs: Record<string, string | number>
+    attributes: Record<string, string | number>
 ): SVGGElement {
-    const group = svgEl('g', attrs);
-    group.appendChild(
+    const group = svgEl('g', attributes);
+    group.append(
         svgEl('circle', { cx, cy, r: 9, fill: '#ffffff', stroke: color, 'stroke-width': 2 })
     );
-    group.appendChild(
+    group.append(
         textEl('+', {
             x: cx,
             y: cy + 4,

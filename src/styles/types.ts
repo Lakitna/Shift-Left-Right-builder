@@ -27,10 +27,14 @@ export type StyleRole =
     | 'legendNote';
 
 export interface TypographyRole {
-    /** Primary family; appended with the style's fallback stack. '' = fallback only. */
+    /**
+    Primary family; appended with the style's fallback stack. '' = fallback only.
+    */
     family: string;
     weight: number;
-    /** Font size in px. */
+    /**
+    Font size in px.
+    */
     size: number;
 }
 
@@ -43,7 +47,9 @@ export interface MultilineTypographyRole extends TypographyRole {
 }
 
 export interface StyleTypography {
-    /** System stack used when a bundled family is unavailable. */
+    /**
+    System stack used when a bundled family is unavailable.
+    */
     fallback: string;
     roles: {
         title: TypographyRole;
@@ -56,60 +62,88 @@ export interface StyleTypography {
         legendLabel: TypographyRole;
         legendNote: MultilineTypographyRole;
     };
-    /** [family, weight] pairs to load before first render and embed in exports. */
+    /**
+    [family, weight] pairs to load before first render and embed in exports.
+    */
     fonts: [string, number][];
 }
 
 export interface CanvasPalette {
     background: string;
-    /** Axis lines + arrowheads. */
+    /**
+    Axis lines + arrowheads.
+    */
     axis: string;
-    /** Numeric gridlines. */
+    /**
+    Numeric gridlines.
+    */
     grid: string;
-    /** Phase boundary separators. */
+    /**
+    Phase boundary separators.
+    */
     phaseTick: string;
     phaseLabel: string;
-    /** Vertical gate line + baseline diamond marker for a moment-in-time event. */
+    /**
+    Vertical gate line + baseline diamond marker for a moment-in-time event.
+    */
     eventLine: string;
-    /** Event callout label text (above the plot). */
+    /**
+    Event callout label text (above the plot).
+    */
     eventLabel: string;
     tickLabel: string;
     title: string;
     axisTitle: string;
-    /** In-plot curve label text color (plain-halo styles) and the halo drawn behind it. */
+    /**
+    In-plot curve label text color (plain-halo styles) and the halo drawn behind it.
+    */
     curveLabel: string;
     curveLabelHalo: string;
     legendText: string;
     legendMuted: string;
     legendSwatchStroke: string;
-    /** Ink for hand-drawn outlines, frames, leaders and hatch patterns. */
+    /**
+    Ink for hand-drawn outlines, frames, leaders and hatch patterns.
+    */
     ink: string;
-    /** Label chip/plate/bubble ground, border and text. */
+    /**
+    Label chip/plate/bubble ground, border and text.
+    */
     chip: string;
     chipStroke: string;
     chipText: string;
-    /** Dashed "click to edit" hint lines. */
+    /**
+    Dashed "click to edit" hint lines.
+    */
     hint: string;
 }
 
 export type PatternName = 'none' | 'diag45' | 'diag-45' | 'cross' | 'dots' | 'horizontal';
 
 export interface StyleGradient {
-    /** Evenly spaced color stops, drawn along the area's diagonal (the barf angle). */
+    /**
+    Evenly spaced color stops, drawn along the area's diagonal (the barf angle).
+    */
     stops: string[];
 }
 
 export interface PatternDef {
     name: PatternName;
-    /** Default color for this pattern — e.g. a colored-pencil hue. Falls back to ink. */
+    /**
+    Default color for this pattern — e.g. a colored-pencil hue. Falls back to ink.
+    */
     color?: string;
 }
 
 export interface StyleFills {
-    /** 'pattern' cycles `patterns` per curve; 'gradient' cycles `gradients` per curve. */
+    /**
+    'pattern' cycles `patterns` per curve; 'gradient' cycles `gradients` per curve.
+    */
     mode: 'solid' | 'pattern' | 'gradient';
     patterns: PatternDef[];
-    /** Cycled per curve when mode='gradient' (each curve gets its own rainbow). */
+    /**
+    Cycled per curve when mode='gradient' (each curve gets its own rainbow).
+    */
     gradients?: StyleGradient[];
     patternSpacing: number;
     patternStroke: number;
@@ -125,11 +159,17 @@ export interface StyleStroke {
 }
 
 export interface StyleJitter {
-    /** Perpendicular wobble amplitude in px; 0 = straight edges. */
+    /**
+    Perpendicular wobble amplitude in px; 0 = straight edges.
+    */
     amplitude: number;
-    /** Distance between wobble control points. */
+    /**
+    Distance between wobble control points.
+    */
     segmentLength: number;
-    /** Seed salt so different styles wobble differently but deterministically. */
+    /**
+    Seed salt so different styles wobble differently but deterministically.
+    */
     salt: number;
 }
 
@@ -137,15 +177,23 @@ export type LabelMode = 'chip' | 'plain-halo' | 'plate' | 'bubble';
 
 export interface StyleLabelTreatment {
     mode: LabelMode;
-    /** Corner radius of the label box (plate = 0). */
+    /**
+    Corner radius of the label box (plate = 0).
+    */
     rx: number;
     padX: number;
-    /** Box height in px; the baseline sits 7px below the vertical center. */
+    /**
+    Box height in px; the baseline sits 7px below the vertical center.
+    */
     height: number;
     borderWidth: number;
-    /** Sticker shadow offset for 'bubble' (0 = none). */
+    /**
+    Sticker shadow offset for 'bubble' (0 = none).
+    */
     shadowOffset: number;
-    /** Halo stroke width for 'plain-halo'. */
+    /**
+    Halo stroke width for 'plain-halo'.
+    */
     haloWidth: number;
 }
 
@@ -169,7 +217,9 @@ export interface ChromeTokens {
     '--font-ui': string;
 }
 
-/** Glitter scattered deterministically across the canvas, under all content. */
+/**
+Glitter scattered deterministically across the canvas, under all content.
+*/
 export interface StyleSparkles {
     count: number;
     colors: string[];
@@ -178,17 +228,25 @@ export interface StyleSparkles {
     maxSize: number;
 }
 
-/** Plot + legend geometry. Shared by all styles; per-style tweaks happen inside the values. */
+/**
+Plot + legend geometry. Shared by all styles; per-style tweaks happen inside the values.
+*/
 export interface Layout {
     plotWidth: number;
     plotHeight: number;
     margin: { top: number; right: number; bottom: number; left: number };
-    /** Band reserved above the plot for the title (used only when a title is present). */
+    /**
+    Band reserved above the plot for the title (used only when a title is present).
+    */
     titleSpace: number;
     titleGap: number;
-    /** Gap between the baseline and the phase-label baseline. */
+    /**
+    Gap between the baseline and the phase-label baseline.
+    */
     phaseLabelGap: number;
-    /** Gap between the phase labels and the legend block. */
+    /**
+    Gap between the phase labels and the legend block.
+    */
     legendGap: number;
     /** Event callout band above the plot: label gap, note line height, leader tick length, and
      *  bottom padding before the plot top. */
@@ -196,19 +254,27 @@ export interface Layout {
     eventNoteLineH: number;
     eventLeader: number;
     eventBandPad: number;
-    /** Max width an event note wraps to, so callouts stay compact. */
+    /**
+    Max width an event note wraps to, so callouts stay compact.
+    */
     eventCalloutMaxWidth: number;
     legendRowGap: number;
     legendSwatch: number;
     legendSwatchGap: number;
-    /** Space left of the legend swatch for the hover-revealed drag handle + remove button. */
+    /**
+    Space left of the legend swatch for the hover-revealed drag handle + remove button.
+    */
     legendRemoveZone: number;
 }
 
 export interface GraphStyle {
-    /** Stable id used in the URL `#s=` param and localStorage. Never rename shipped ids. */
+    /**
+    Stable id used in the URL `#s=` param and localStorage. Never rename shipped ids.
+    */
     id: string;
-    /** Display name in the style selector. */
+    /**
+    Display name in the style selector.
+    */
     name: string;
     typography: StyleTypography;
     canvas: { light: CanvasPalette; dark: CanvasPalette };
@@ -229,8 +295,12 @@ export interface GraphStyle {
     };
     layout: Layout;
     chrome: { light: ChromeTokens; dark: ChromeTokens };
-    /** Top-edge line width when `stroke.curveOutline` is 0. */
+    /**
+    Top-edge line width when `stroke.curveOutline` is 0.
+    */
     curveStrokeWidth: number;
-    /** Radius of an editing control-point handle (px). */
+    /**
+    Radius of an editing control-point handle (px).
+    */
     pointRadius: number;
 }

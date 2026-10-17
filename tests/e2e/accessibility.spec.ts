@@ -10,17 +10,18 @@ import { applyPreset, gotoApp } from './helpers';
  * visibility, target size, reflow, text spacing, accessible names and labels.
  */
 
-/** Identifies the focused element in a way that reads well in an assertion failure. */
+/**
+Identifies the focused element in a way that reads well in an assertion failure.
+*/
 async function focusedLabel(page: Page): Promise<string> {
     return page.evaluate(() => {
-        const el = document.activeElement as HTMLElement | null;
-        if (el === null) return '';
-        return (
-            el.id ||
-            el.getAttribute('aria-label') ||
-            el.getAttribute('title') ||
-            (el.textContent ?? '').trim().slice(0, 40) ||
-            el.tagName
+        const element = document.activeElement as HTMLElement | null;
+        return element === null ? '' : (
+            element.id ||
+            element.getAttribute('aria-label') ||
+            element.getAttribute('title') ||
+            (element.textContent ?? '').trim().slice(0, 40) ||
+            element.tagName
         );
     });
 }
@@ -59,14 +60,14 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
         for (let step = 0; step < 10; step += 1) {
             await page.keyboard.press('Tab');
             const result = await page.evaluate(() => {
-                const el = document.activeElement as HTMLElement | null;
+                const element = document.activeElement as HTMLElement | null;
                 // The body is not a control — focus lands there when the browser moves focus out of
                 // the page, and it carries no indicator by design.
-                if (el === null || el.tagName === 'BODY') return null;
-                const style = getComputedStyle(el);
+                if (element === null || element.tagName === 'BODY') return null;
+                const style = getComputedStyle(element);
                 return {
-                    label: el.id || el.getAttribute('title') || el.tagName,
-                    visible: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0,
+                    label: element.id || element.getAttribute('title') || element.tagName,
+                    visible: style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0,
                 };
             });
             if (result !== null && !result.visible) withoutIndicator.push(result.label);
@@ -97,15 +98,15 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
                 ...document.querySelectorAll('#svg-dialog .segment'),
             ];
             return targets
-                .filter((el) => el.getBoundingClientRect().width > 0)
-                .map((el) => {
-                    const box = el.getBoundingClientRect();
+                .filter((element) => element.getBoundingClientRect().width > 0)
+                .map((element) => {
+                    const box = element.getBoundingClientRect();
                     return {
                         label:
-                            el.id ||
-                            el.getAttribute('title') ||
-                            (el.textContent ?? '').trim().slice(0, 30) ||
-                            el.tagName,
+                            element.id ||
+                            element.getAttribute('title') ||
+                            (element.textContent ?? '').trim().slice(0, 30) ||
+                            element.tagName,
                         width: Math.round(box.width),
                         height: Math.round(box.height),
                     };
@@ -139,11 +140,11 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
             ];
             return nodes
                 .filter(
-                    (el) =>
-                        el.getBoundingClientRect().height === 0 ||
-                        el.getBoundingClientRect().width === 0
+                    (element) =>
+                        element.getBoundingClientRect().height === 0 ||
+                        element.getBoundingClientRect().width === 0
                 )
-                .map((el) => (el.textContent ?? '').trim().slice(0, 40));
+                .map((element) => (element.textContent ?? '').trim().slice(0, 40));
         });
 
         expect(clipped).toEqual([]);
@@ -161,8 +162,7 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
                 .filter((button) => {
                     const text = (button.textContent ?? '').trim();
                     // A button with readable text names itself; a glyph or emoji does not.
-                    if (/^[a-z0-9]/i.test(text)) return false;
-                    return (
+                    return /^[a-z0-9]/i.test(text) ? false : (
                         (button.getAttribute('aria-label') ?? '') === '' &&
                         (button.getAttribute('title') ?? '') === ''
                     );
@@ -181,7 +181,7 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
                 .filter(
                     (input) =>
                         input.closest('label') === null &&
-                        document.querySelector(`label[for="${input.id}"]`) === null
+                        document.querySelector(`label[for="${CSS.escape(input.id)}"]`) === null
                 )
                 .map((input) => input.id)
         );

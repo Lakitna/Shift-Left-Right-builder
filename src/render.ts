@@ -12,7 +12,7 @@
  * hit-test without duplicating math.
  */
 
-import { addBadge, removeBadge, SVG_NS, svgEl, textEl } from './dom';
+import { addBadge, removeBadge, SVG_NS, svgEl as svgElement, textEl as textElement } from './dom';
 import {
     MAX_CURVES,
     MAX_EVENTS,
@@ -37,11 +37,15 @@ import type {
 export interface RenderOptions {
     style?: GraphStyle;
     dark: boolean;
-    /** Editing canvas keeps full layout (placeholders); exports collapse empty title/legend. */
+    /**
+    Editing canvas keeps full layout (placeholders); exports collapse empty title/legend.
+    */
     editing?: boolean;
     transparentBackground?: boolean;
     attribution?: boolean;
-    /** Exports may drop the legend block entirely; the editing canvas always shows it. */
+    /**
+    Exports may drop the legend block entirely; the editing canvas always shows it.
+    */
     includeLegend?: boolean;
 }
 
@@ -57,7 +61,9 @@ export interface LegendRow {
     noteLines: string[];
 }
 
-/** How a callout's text is anchored to its gate line, depending on how close the gate is to an edge. */
+/**
+How a callout's text is anchored to its gate line, depending on how close the gate is to an edge.
+*/
 export type CalloutAnchor = 'start' | 'middle' | 'end';
 
 /**
@@ -75,17 +81,24 @@ export function calloutAnchor(
     const half = maxWidth / 2;
     const pad = 4;
     if (gateX < plotX0 + half) return { anchor: 'start', textX: gateX + pad };
-    if (gateX > plotX1 - half) return { anchor: 'end', textX: gateX - pad };
-    return { anchor: 'middle', textX: gateX };
+    return gateX > plotX1 - half ? { anchor: 'end', textX: gateX - pad } : { anchor: 'middle', textX: gateX };
 }
 
-/** A laid-out event callout: its gate x and the wrapped label/note lines drawn above the plot. */
+/**
+A laid-out event callout: its gate x and the wrapped label/note lines drawn above the plot.
+*/
 export interface EventCallout {
-    /** Model x (0..100) of the event, for the gate line. */
+    /**
+    Model x (0..100) of the event, for the gate line.
+    */
     x: number;
-    /** How the label + note are anchored to the gate (see {@link calloutAnchor}). */
+    /**
+    How the label + note are anchored to the gate (see {@link calloutAnchor}).
+    */
     anchor: CalloutAnchor;
-    /** Pixel x the label + note are drawn at (the gate x, nudged inward near the edges). */
+    /**
+    Pixel x the label + note are drawn at (the gate x, nudged inward near the edges).
+    */
     textX: number;
     label: string;
     noteLines: string[];
@@ -94,7 +107,9 @@ export interface EventCallout {
 export interface GraphGeom {
     width: number;
     height: number;
-    /** Y of the frame's bottom border; equals height when no attribution strip is reserved. */
+    /**
+    Y of the frame's bottom border; equals height when no attribution strip is reserved.
+    */
     frameBottom: number;
     plotX0: number;
     plotY0: number;
@@ -103,20 +118,30 @@ export interface GraphGeom {
     plotWidth: number;
     plotHeight: number;
     baselineY: number;
-    /** Pixel x of each phase tick, in phase order. */
+    /**
+    Pixel x of each phase tick, in phase order.
+    */
     phaseXs: number[];
     phaseLabelY: number;
-    /** Pixel x of each event gate, in event order. */
+    /**
+    Pixel x of each event gate, in event order.
+    */
     eventXs: number[];
-    /** Laid-out event callouts (label + wrapped note), in event order. */
+    /**
+    Laid-out event callouts (label + wrapped note), in event order.
+    */
     eventCallouts: EventCallout[];
-    /** Baseline y of the event label line, and the top of the first note line (both above the plot). */
+    /**
+    Baseline y of the event label line, and the top of the first note line (both above the plot).
+    */
     eventLabelY: number;
     eventNoteTop: number;
     legendX: number;
     legendWidth: number;
     legendRows: LegendRow[];
-    /** Y where the legend rows end (before any editor-only "+ Add curve" row). */
+    /**
+    Y where the legend rows end (before any editor-only "+ Add curve" row).
+    */
     legendBottom: number;
     style: GraphStyle;
     palette: CanvasPalette;
@@ -142,13 +167,17 @@ function textWidth(text: string, font: string): number {
     return measureContext.measureText(text).width;
 }
 
-/** The role's primary family (when set) followed by the style's fallback stack. */
+/**
+The role's primary family (when set) followed by the style's fallback stack.
+*/
 function fontStack(style: GraphStyle, role: StyleRole): string {
     const r = style.typography.roles[role];
     return r.family === '' ? style.typography.fallback : `${r.family}, ${style.typography.fallback}`;
 }
 
-/** Canvas `measureText`-compatible font spec for a role. */
+/**
+Canvas `measureText`-compatible font spec for a role.
+*/
 function fontSpec(style: GraphStyle, role: StyleRole): string {
     const r = style.typography.roles[role];
     return `${r.weight} ${r.size}px ${fontStack(style, role)}`;
@@ -168,10 +197,12 @@ function wrapText(text: string, maxWidth: number, font: string): string[] {
         }
         let current = '';
         const flush = (): void => {
-            if (current !== '') {
-                lines.push(current);
-                current = '';
+            if (current === '') {
+                return;
             }
+
+            lines.push(current);
+            current = '';
         };
         for (const word of paragraph.split(/\s+/).filter((w) => w !== '')) {
             const candidate = current === '' ? word : current + ' ' + word;
@@ -205,17 +236,17 @@ function wrapText(text: string, maxWidth: number, font: string): string[] {
 function mulberry32(a: number): () => number {
     return () => {
         a |= 0;
-        a = (a + 0x6d2b79f5) | 0;
+        a = (a + 0x6D_2B_79_F5) | 0;
         let t = Math.imul(a ^ (a >>> 15), 1 | a);
         t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
     };
 }
 
 function hashNumbers(nums: number[]): number {
-    let h = 2166136261;
+    let h = 2_166_136_261;
     for (const n of nums) {
-        h = Math.imul(h ^ Math.round(n), 16777619);
+        h = Math.imul(h ^ Math.round(n), 16_777_619);
     }
     return h >>> 0;
 }
@@ -235,7 +266,7 @@ function smoothNoise(seed: number): (t: number) => number {
     const phases = waves.map(() => rand() * Math.PI * 2);
     const norm = waves.reduce((sum, w) => sum + w.a, 0);
     return (t) =>
-        waves.reduce((sum, w, i) => sum + w.a * Math.sin(2 * Math.PI * w.f * t + phases[i]), 0) /
+        waves.reduce((sum, w, index) => sum + w.a * Math.sin(2 * Math.PI * w.f * t + phases[index]), 0) /
         norm;
 }
 
@@ -265,7 +296,9 @@ export function effectiveCurvePattern(
     return null;
 }
 
-/** The gradient this curve shows, or null when it is not a gradient fill. */
+/**
+The gradient this curve shows, or null when it is not a gradient fill.
+*/
 export function effectiveCurveGradient(
     style: GraphStyle,
     curve: Curve,
@@ -274,8 +307,7 @@ export function effectiveCurveGradient(
     if (curve.colorCustom === true) return null;
     if (style.fills.mode === 'gradient') {
         const gradients = style.fills.gradients ?? [];
-        if (gradients.length === 0) return null;
-        return gradients[index % gradients.length];
+        return gradients.length === 0 ? null : gradients[index % gradients.length];
     }
     return null;
 }
@@ -320,7 +352,9 @@ export function effectiveCurveSwatchColor(
     return palette[index % palette.length] ?? curve.color;
 }
 
-/** One hatch tile, addressed by a per-curve id so each curve can carry its own pencil color. */
+/**
+One hatch tile, addressed by a per-curve id so each curve can carry its own pencil color.
+*/
 function patternElement(
     id: string,
     name: PatternName,
@@ -330,15 +364,15 @@ function patternElement(
     const s = fills.patternSpacing;
     const w = fills.patternStroke;
     const op = fills.patternOpacity;
-    const pattern = svgEl('pattern', {
+    const pattern = svgElement('pattern', {
         id,
         width: s,
         height: s,
         patternUnits: 'userSpaceOnUse',
     });
     if (name === 'dots') {
-        pattern.appendChild(
-            svgEl('circle', {
+        pattern.append(
+            svgElement('circle', {
                 cx: s / 2,
                 cy: s / 2,
                 r: Math.max(1, w * 1.1),
@@ -358,48 +392,50 @@ function patternElement(
                   : name === 'cross'
                     ? `${d45} ${d135}`
                     : dH;
-        pattern.appendChild(
-            svgEl('path', { d, stroke: color, 'stroke-width': w, opacity: op, fill: 'none' })
+        pattern.append(
+            svgElement('path', { d, stroke: color, 'stroke-width': w, opacity: op, fill: 'none' })
         );
     }
     return pattern;
 }
 
-/** Pattern AND gradient defs are PER CURVE (ids graph-pat-{i} / graph-grad-{i}). */
+/**
+Pattern AND gradient defs are PER CURVE (ids graph-pat-{i} / graph-grad-{i}).
+*/
 function fillDefs(style: GraphStyle, ink: string, model: GraphModel): SVGDefsElement | null {
-    const defs = svgEl('defs', {});
-    let any = false;
-    model.curves.forEach((curve, index) => {
+    const defs = svgElement('defs', {});
+    let isAny = false;
+    for (const [index, curve] of model.curves.entries()) {
         const pattern = effectiveCurvePattern(style, curve, index, ink);
         if (pattern !== null && pattern.name !== 'none') {
-            any = true;
-            defs.appendChild(
+            isAny = true;
+            defs.append(
                 patternElement(`graph-pat-${index}`, pattern.name, pattern.color, style.fills)
             );
         }
         const gradient = effectiveCurveGradient(style, curve, index);
         if (gradient !== null) {
-            any = true;
-            const grad = svgEl('linearGradient', {
+            isAny = true;
+            const grad = svgElement('linearGradient', {
                 id: `graph-grad-${index}`,
                 x1: '0%',
                 y1: '0%',
                 x2: '100%',
                 y2: '100%',
             });
-            gradient.stops.forEach((color, stopIndex) => {
+            for (const [stopIndex, color] of gradient.stops.entries()) {
                 const offset =
                     gradient.stops.length === 1
                         ? 0
                         : (stopIndex / (gradient.stops.length - 1)) * 100;
-                grad.appendChild(
-                    svgEl('stop', { offset: `${Math.round(offset)}%`, 'stop-color': color })
+                grad.append(
+                    svgElement('stop', { offset: `${Math.round(offset)}%`, 'stop-color': color })
                 );
-            });
-            defs.appendChild(grad);
+            }
+            defs.append(grad);
         }
-    });
-    return any ? defs : null;
+    }
+    return isAny ? defs : null;
 }
 
 // --- Layout ------------------------------------------------------------------
@@ -482,11 +518,11 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
     const labelLineH = R.legendLabel.size + 6;
     const noteLineH = R.legendNote.lineHeight;
     const phaseBottom = phaseLabelY + (R.phaseLabel.size + 6);
-    const includeLegend = options.includeLegend ?? true;
-    const legendTop = includeLegend ? phaseBottom + L.legendGap : phaseBottom;
+    const isIncludeLegend = options.includeLegend ?? true;
+    const legendTop = isIncludeLegend ? phaseBottom + L.legendGap : phaseBottom;
 
     let cursor = legendTop;
-    const legendRows: LegendRow[] = includeLegend
+    const legendRows: LegendRow[] = isIncludeLegend
         ? [...model.curves.keys()].reverse().map((curveIndex) => {
               const curve = model.curves[curveIndex];
               const noteLines = wrapText(curve.notes, legendWidth, noteFont);
@@ -542,23 +578,25 @@ function sortedPoints(curve: Curve): CurvePoint[] {
     return [...curve.points].sort((a, b) => a.x - b.x);
 }
 
-/** The top-line commands (after the initial M) for points already in pixel space. */
+/**
+The top-line commands (after the initial M) for points already in pixel space.
+*/
 function topLineCommands(pts: Pt[], smooth: boolean): string {
     if (pts.length < 2) return '';
     if (!smooth) {
         let d = '';
-        for (let i = 1; i < pts.length; i++) {
-            d += `L${round(pts[i].x)},${round(pts[i].y)}`;
+        for (let index = 1; index < pts.length; index++) {
+            d += `L${round(pts[index].x)},${round(pts[index].y)}`;
         }
         return d;
     }
     // Catmull-Rom converted to cubic beziers, endpoints clamped.
     let d = '';
-    for (let i = 0; i < pts.length - 1; i++) {
-        const p0 = pts[Math.max(i - 1, 0)];
-        const p1 = pts[i];
-        const p2 = pts[i + 1];
-        const p3 = pts[Math.min(i + 2, pts.length - 1)];
+    for (let index = 0; index < pts.length - 1; index++) {
+        const p0 = pts[Math.max(index - 1, 0)];
+        const p1 = pts[index];
+        const p2 = pts[index + 1];
+        const p3 = pts[Math.min(index + 2, pts.length - 1)];
         const c1x = p1.x + (p2.x - p0.x) / 6;
         const c1y = p1.y + (p2.y - p0.y) / 6;
         const c2x = p2.x - (p3.x - p1.x) / 6;
@@ -585,13 +623,13 @@ function cubicAt(a: Pt, c1: Pt, c2: Pt, b: Pt, t: number): Pt {
 function denseTopPoints(pts: Pt[], smooth: boolean, segmentLength: number): Pt[] {
     if (pts.length < 2) return pts;
     const out: Pt[] = [pts[0]];
-    for (let i = 0; i < pts.length - 1; i++) {
-        const p0 = pts[Math.max(i - 1, 0)];
-        const p1 = pts[i];
-        const p2 = pts[i + 1];
-        const p3 = pts[Math.min(i + 2, pts.length - 1)];
-        const len = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        const steps = Math.max(2, Math.round(len / segmentLength));
+    for (let index = 0; index < pts.length - 1; index++) {
+        const p0 = pts[Math.max(index - 1, 0)];
+        const p1 = pts[index];
+        const p2 = pts[index + 1];
+        const p3 = pts[Math.min(index + 2, pts.length - 1)];
+        const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const steps = Math.max(2, Math.round(length / segmentLength));
         if (!smooth) {
             for (let k = 1; k <= steps; k++) {
                 const t = k / steps;
@@ -616,26 +654,26 @@ function denseTopPoints(pts: Pt[], smooth: boolean, segmentLength: number): Pt[]
 function jitterPoints(pts: Pt[], jitter: StyleJitter, saltExtra: number): Pt[] {
     if (pts.length < 2) return pts;
     const cum: number[] = [0];
-    for (let i = 1; i < pts.length; i++) {
-        cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    for (let index = 1; index < pts.length; index++) {
+        cum.push(cum[index - 1] + Math.hypot(pts[index].x - pts[index - 1].x, pts[index].y - pts[index - 1].y));
     }
-    const total = cum[cum.length - 1] || 1;
+    const total = cum.at(-1) || 1;
     const noise = smoothNoise(
         hashNumbers([
             jitter.salt,
             saltExtra,
             Math.round(pts[0].x * 2),
-            Math.round(pts[pts.length - 1].x * 2),
+            Math.round(pts.at(-1).x * 2),
             Math.round(pts[0].y * 2),
         ])
     );
-    return pts.map((p, i) => {
-        const prev = pts[Math.max(i - 1, 0)];
-        const next = pts[Math.min(i + 1, pts.length - 1)];
-        const dx = next.x - prev.x;
-        const dy = next.y - prev.y;
+    return pts.map((p, index) => {
+        const previous = pts[Math.max(index - 1, 0)];
+        const next = pts[Math.min(index + 1, pts.length - 1)];
+        const dx = next.x - previous.x;
+        const dy = next.y - previous.y;
         const span = Math.hypot(dx, dy) || 1;
-        const off = jitter.amplitude * noise(cum[i] / total);
+        const off = jitter.amplitude * noise(cum[index] / total);
         return { x: p.x + (-dy / span) * off, y: p.y + (dx / span) * off };
     });
 }
@@ -655,7 +693,7 @@ function curveTopEdge(
     if (style.jitter.amplitude <= 0) {
         return {
             start: pts[0],
-            end: pts[pts.length - 1],
+            end: pts.at(-1),
             commands: topLineCommands(pts, curve.smooth),
         };
     }
@@ -663,7 +701,7 @@ function curveTopEdge(
     const wob = jitterPoints(dense, style.jitter, pts.length);
     return {
         start: wob[0],
-        end: wob[wob.length - 1],
+        end: wob.at(-1),
         commands: wob
             .slice(1)
             .map((p) => `L${round(p.x)},${round(p.y)}`)
@@ -692,18 +730,20 @@ export function segmentMidpoint(curve: Curve, index: number): CurvePoint {
     };
 }
 
-/** Open path along the curve's top edge (jittered when the style asks for it). */
+/**
+Open path along the curve's top edge (jittered when the style asks for it).
+*/
 export function curveLinePath(curve: Curve, geom: GraphGeom): string {
     const edge = curveTopEdge(curve, geom);
-    if (edge === null) return '';
-    return `M${round(edge.start.x)},${round(edge.start.y)}${edge.commands}`;
+    return edge === null ? '' : `M${round(edge.start.x)},${round(edge.start.y)}${edge.commands}`;
 }
 
-/** Closed path: the top edge filled down to the baseline. */
+/**
+Closed path: the top edge filled down to the baseline.
+*/
 export function curveAreaPath(curve: Curve, geom: GraphGeom): string {
     const edge = curveTopEdge(curve, geom);
-    if (edge === null) return '';
-    return (
+    return edge === null ? '' : (
         `M${round(edge.start.x)},${round(geom.baselineY)} L${round(edge.start.x)},${round(edge.start.y)}` +
         edge.commands +
         ` L${round(edge.end.x)},${round(geom.baselineY)} Z`
@@ -724,7 +764,9 @@ function peakPoint(curve: Curve): CurvePoint | null {
 
 // --- SVG assembly ------------------------------------------------------------
 
-/** A dashed rule used as the "click to edit" placeholder for an empty field. */
+/**
+A dashed rule used as the "click to edit" placeholder for an empty field.
+*/
 function hintLine(
     x1: number,
     y1: number,
@@ -732,7 +774,7 @@ function hintLine(
     y2: number,
     palette: CanvasPalette
 ): SVGLineElement {
-    return svgEl('line', {
+    return svgElement('line', {
         x1: round(x1),
         y1: round(y1),
         x2: round(x2),
@@ -744,7 +786,9 @@ function hintLine(
     });
 }
 
-/** Bare dashed horizontal hint line for empty fields inside an already-clickable group. */
+/**
+Bare dashed horizontal hint line for empty fields inside an already-clickable group.
+*/
 function dashedHintLine(x1: number, x2: number, y: number, palette: CanvasPalette): SVGLineElement {
     return hintLine(x1, y, x2, y, palette);
 }
@@ -759,11 +803,11 @@ function hintPlaceholder(
     y: number,
     halfWidth: number,
     palette: CanvasPalette,
-    attrs: Record<string, string | number>
+    attributes: Record<string, string | number>
 ): SVGGElement {
-    const group = svgEl('g', { ...attrs, class: 'empty-hint' });
-    group.appendChild(
-        svgEl('rect', {
+    const group = svgElement('g', { ...attributes, class: 'empty-hint' });
+    group.append(
+        svgElement('rect', {
             x: round(cx - halfWidth),
             y: round(y - 13),
             width: round(halfWidth * 2),
@@ -772,11 +816,13 @@ function hintPlaceholder(
             'pointer-events': 'all',
         })
     );
-    group.appendChild(hintLine(cx - halfWidth, y, cx + halfWidth, y, palette));
+    group.append(hintLine(cx - halfWidth, y, cx + halfWidth, y, palette));
     return group;
 }
 
-/** Draw the in-plot curve label according to the style's label treatment. */
+/**
+Draw the in-plot curve label according to the style's label treatment.
+*/
 function renderCurveLabel(
     container: SVGElement,
     geom: GraphGeom,
@@ -789,12 +835,12 @@ function renderCurveLabel(
     const palette = geom.palette;
     const t = style.label;
     const role = style.typography.roles.curveLabel;
-    const fieldAttrs = { 'data-curve-index': index, 'data-edit-field': 'curve-label' };
+    const fieldAttributes = { 'data-curve-index': index, 'data-edit-field': 'curve-label' };
 
     if (t.mode === 'plain-halo') {
         // Ink text with a ground-colored halo (paint-order) instead of a box.
-        container.appendChild(
-            textEl(label, {
+        container.append(
+            textElement(label, {
                 x: round(cx),
                 y: round(textY),
                 'text-anchor': 'middle',
@@ -805,7 +851,7 @@ function renderCurveLabel(
                 'stroke-width': Math.max(3, t.haloWidth),
                 'paint-order': 'stroke',
                 'stroke-linejoin': 'round',
-                ...fieldAttrs,
+                ...fieldAttributes,
             })
         );
         return;
@@ -815,8 +861,8 @@ function renderCurveLabel(
     const boxX = cx - boxWidth / 2;
     const boxY = textY - (t.height - 10);
     if (t.shadowOffset > 0) {
-        container.appendChild(
-            svgEl('rect', {
+        container.append(
+            svgElement('rect', {
                 x: round(boxX + t.shadowOffset),
                 y: round(boxY + t.shadowOffset),
                 width: round(boxWidth),
@@ -827,8 +873,8 @@ function renderCurveLabel(
             })
         );
     }
-    container.appendChild(
-        svgEl('rect', {
+    container.append(
+        svgElement('rect', {
             x: round(boxX),
             y: round(boxY),
             width: round(boxWidth),
@@ -841,20 +887,22 @@ function renderCurveLabel(
             'pointer-events': 'none',
         })
     );
-    container.appendChild(
-        textEl(label, {
+    container.append(
+        textElement(label, {
             x: round(cx),
             y: round(textY),
             'text-anchor': 'middle',
             'font-size': role.size,
             'font-weight': role.weight,
             fill: palette.chipText,
-            ...fieldAttrs,
+            ...fieldAttributes,
         })
     );
 }
 
-/** Four-point sparkle star centered on (cx, cy) with arm length s. */
+/**
+Four-point sparkle star centered on (cx, cy) with arm length s.
+*/
 function sparkleStar(cx: number, cy: number, s: number): string {
     const k = s * 0.22;
     return (
@@ -867,7 +915,9 @@ function sparkleStar(cx: number, cy: number, s: number): string {
 
 export interface RenderResult {
     svg: SVGSVGElement;
-    /** The layout the SVG was built with — the editor reuses it for handles and hit-testing. */
+    /**
+    The layout the SVG was built with — the editor reuses it for handles and hit-testing.
+    */
     geom: GraphGeom;
 }
 
@@ -877,7 +927,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     const R = style.typography.roles;
     const L = style.layout;
 
-    const svg = svgEl('svg', {
+    const svg = svgElement('svg', {
         xmlns: SVG_NS,
         viewBox: `0 0 ${round(geom.width)} ${round(geom.height)}`,
         width: round(geom.width),
@@ -887,11 +937,11 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     svg.setAttribute('font-family', style.typography.fallback);
 
     const defs = fillDefs(style, palette.ink, model);
-    if (defs !== null) svg.appendChild(defs);
+    if (defs !== null) svg.append(defs);
 
     if (!options.transparentBackground) {
-        svg.appendChild(
-            svgEl('rect', {
+        svg.append(
+            svgElement('rect', {
                 x: 0,
                 y: 0,
                 width: round(geom.width),
@@ -908,13 +958,13 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             hashNumbers([style.jitter.salt + 991, count, geom.width, geom.height])
         );
         const inset = 12;
-        for (let i = 0; i < count; i++) {
+        for (let index = 0; index < count; index++) {
             const x = inset + rand() * Math.max(1, geom.width - 2 * inset);
             const y = inset + rand() * Math.max(1, geom.height - 2 * inset);
             const size = minSize + rand() * (maxSize - minSize);
             const color = colors[Math.floor(rand() * colors.length)];
-            svg.appendChild(
-                svgEl('path', {
+            svg.append(
+                svgElement('path', {
                     d: sparkleStar(x, y, size),
                     fill: color,
                     opacity,
@@ -928,8 +978,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // Stroked in the axis color, not ink: styles whose ink is a "seam" black (toon dark)
     // still need their border visible on a dark ground.
     if (style.frame !== 'none') {
-        svg.appendChild(
-            svgEl('rect', {
+        svg.append(
+            svgElement('rect', {
                 x: 4,
                 y: 4,
                 width: round(geom.width - 8),
@@ -940,8 +990,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             })
         );
         if (style.frame === 'double') {
-            svg.appendChild(
-                svgEl('rect', {
+            svg.append(
+                svgElement('rect', {
                     x: 8,
                     y: 8,
                     width: round(geom.width - 16),
@@ -957,8 +1007,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // Title
     const title = (model.title ?? '').trim();
     if (title !== '') {
-        svg.appendChild(
-            textEl(title, {
+        svg.append(
+            textElement(title, {
                 x: round(geom.plotX0 + geom.plotWidth / 2),
                 y: round(L.margin.top + L.titleSpace * 0.7),
                 'text-anchor': 'middle',
@@ -970,7 +1020,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             })
         );
     } else if (options.editing) {
-        svg.appendChild(
+        svg.append(
             hintPlaceholder(
                 geom.plotX0 + geom.plotWidth / 2,
                 L.margin.top + L.titleSpace * 0.7 - 5,
@@ -984,15 +1034,17 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // Axes are split into two layers so curve fills can never cover the axis lines: the faint
     // grid / phase ticks paint *below* the curves, everything structural (axis lines, arrowheads,
     // baseline, tick and phase labels, y-axis title) paints *above* them.
-    const grid = svgEl('g', { class: 'grid' });
-    const axes = svgEl('g', { class: 'axes' });
+    const grid = svgElement('g', { class: 'grid' });
+    const axes = svgElement('g', { class: 'axes' });
     // --- Axes ---------------------------------------------------------------
 
     const axisStroke = { stroke: palette.axis, 'stroke-width': 2 };
 
-    /** A line ending in a triangular arrowhead pointing along (dx, dy) — one of the unit dirs. */
+    /**
+    A line ending in a triangular arrowhead pointing along (dx, dy) — one of the unit dirs.
+    */
     function arrowedAxis(x1: number, y1: number, x2: number, y2: number): void {
-        axes.appendChild(svgEl('line', { x1: round(x1), y1: round(y1), x2, y2, ...axisStroke }));
+        axes.append(svgElement('line', { x1: round(x1), y1: round(y1), x2, y2, ...axisStroke }));
         // Arrowhead: tip 10px beyond the line end, base ±5px perpendicular.
         const dx = Math.sign(x2 - x1);
         const dy = Math.sign(y2 - y1);
@@ -1000,8 +1052,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         const tipY = y2 + dy * 10;
         const px = -dy; // perpendicular
         const py = dx;
-        axes.appendChild(
-            svgEl('polygon', {
+        axes.append(
+            svgElement('polygon', {
                 points: `${round(x2 + px * 5)},${round(y2 + py * 5)} ${round(tipX)},${round(
                     tipY
                 )} ${round(x2 - px * 5)},${round(y2 - py * 5)}`,
@@ -1014,8 +1066,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         for (const value of [0, 25, 50, 75, 100]) {
             const py = geom.toPx(0, value).y;
             if (value !== 0) {
-                grid.appendChild(
-                    svgEl('line', {
+                grid.append(
+                    svgElement('line', {
                         x1: round(geom.plotX0),
                         y1: round(py),
                         x2: round(geom.plotX1),
@@ -1025,8 +1077,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                     })
                 );
             }
-            axes.appendChild(
-                textEl(String(value), {
+            axes.append(
+                textElement(String(value), {
                     x: round(geom.plotX0 - 10),
                     y: round(py + 4),
                     'text-anchor': 'end',
@@ -1038,8 +1090,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             );
         }
         // Y axis line (no arrowhead in numeric mode)
-        axes.appendChild(
-            svgEl('line', {
+        axes.append(
+            svgElement('line', {
                 x1: round(geom.plotX0),
                 y1: round(geom.plotY0),
                 x2: round(geom.plotX0),
@@ -1053,8 +1105,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     }
 
     // Baseline (both modes)
-    axes.appendChild(
-        svgEl('line', {
+    axes.append(
+        svgElement('line', {
             x1: round(geom.plotX0),
             y1: round(geom.baselineY),
             x2: round(geom.plotX1),
@@ -1067,8 +1119,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // edges events snap to — instead of at the band centres, and none at the plot's outer edges.
     for (const boundary of phaseBoundaries(model.phases.length).slice(1, -1)) {
         const bx = geom.toPx(boundary, 0).x;
-        grid.appendChild(
-            svgEl('line', {
+        grid.append(
+            svgElement('line', {
                 x1: round(bx),
                 y1: round(geom.plotY0),
                 x2: round(bx),
@@ -1081,11 +1133,11 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
 
     // Phase labels sit at each band's centre. In edit mode each label is a group that reveals a
     // small ✕ on hover (remove phase); the label itself is click-to-edit / drag-to-reorder.
-    model.phases.forEach((phase, index) => {
+    for (const [index, phase] of model.phases.entries()) {
         const px = geom.phaseXs[index];
-        const group = svgEl('g', { class: 'phase-group' });
-        group.appendChild(
-            textEl(phase.label, {
+        const group = svgElement('g', { class: 'phase-group' });
+        group.append(
+            textElement(phase.label, {
                 x: round(px),
                 y: round(geom.phaseLabelY),
                 'text-anchor': 'middle',
@@ -1099,7 +1151,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             })
         );
         if (phase.label === '' && options.editing) {
-            group.appendChild(
+            group.append(
                 hintPlaceholder(px, geom.phaseLabelY - 5, 36, palette, {
                     'data-edit-field': 'phase',
                     'data-phase-index': index,
@@ -1107,15 +1159,15 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             );
         }
         if (options.editing) {
-            group.appendChild(
+            group.append(
                 removeBadge(px, geom.phaseLabelY + 24, 9, 11, 4, palette, {
                     class: 'phase-remove',
                     'data-phase-remove': index,
                 })
             );
         }
-        axes.appendChild(group);
-    });
+        axes.append(group);
+    }
 
     // Y-axis title (rotated)
     const yTitle = (model.yAxisTitle ?? '').trim();
@@ -1125,13 +1177,11 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     const tickGutter = L.margin.left - 10 - R.tickLabel.size;
     // Leave ~2px of ink between the label and the gutter content it hugs.
     const yTitlePad = (R.axisTitle.size + 6) / 2 + 2;
-    const yTitleX = model.numericAxis
-        ? round(tickGutter - yTitlePad)
-        : round(L.margin.left - 8 - yTitlePad);
+    const yTitleX = round((model.numericAxis ? tickGutter : L.margin.left - 8) - yTitlePad);
     const yTitleY = (geom.plotY0 + geom.baselineY) / 2;
     if (yTitle !== '') {
-        axes.appendChild(
-            textEl(yTitle, {
+        axes.append(
+            textElement(yTitle, {
                 x: yTitleX,
                 y: round(yTitleY),
                 'text-anchor': 'middle',
@@ -1147,12 +1197,10 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         // The hint's rotated text grows left from its baseline, so anchor the baseline near the
         // gutter edge instead of centring it on `yTitleX` — otherwise half the band falls off the
         // canvas and the field looks unclickable.
-        const hintBaseline = model.numericAxis
-            ? round(L.margin.left - 10 - R.tickLabel.size - 2)
-            : round(L.margin.left - 10);
-        const hint = svgEl('g', { 'data-edit-field': 'yaxis', class: 'empty-hint' });
-        hint.appendChild(
-            svgEl('rect', {
+        const hintBaseline = round(model.numericAxis ? L.margin.left - 10 - R.tickLabel.size - 2 : L.margin.left - 10);
+        const hint = svgElement('g', { 'data-edit-field': 'yaxis', class: 'empty-hint' });
+        hint.append(
+            svgElement('rect', {
                 x: round(hintBaseline - (R.axisTitle.size + 6)),
                 y: round(yTitleY - 90),
                 width: round(R.axisTitle.size + 14),
@@ -1161,22 +1209,22 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'all',
             })
         );
-        hint.appendChild(hintLine(hintBaseline, yTitleY - 90, hintBaseline, yTitleY + 90, palette));
-        axes.appendChild(hint);
+        hint.append(hintLine(hintBaseline, yTitleY - 90, hintBaseline, yTitleY + 90, palette));
+        axes.append(hint);
     }
 
-    svg.appendChild(grid);
+    svg.append(grid);
 
     // Curves (fills + top lines), later curves paint on top so overlaps blend. Each curve group
     // carries an invisible wide stroke over the top line so it is hoverable/clickable as a band.
     const hitWidth = Math.max(14, style.curveStrokeWidth + 10);
-    const curvesGroup = svgEl('g', { class: 'curves' });
-    model.curves.forEach((curve, index) => {
-        const group = svgEl('g', { 'data-curve-index': index });
+    const curvesGroup = svgElement('g', { class: 'curves' });
+    for (const [index, curve] of model.curves.entries()) {
+        const group = svgElement('g', { 'data-curve-index': index });
         const fillValue = effectiveCurveFill(style, curve, index, geom.dark);
         const line = curveLinePath(curve, geom);
-        group.appendChild(
-            svgEl('path', {
+        group.append(
+            svgElement('path', {
                 d: curveAreaPath(curve, geom),
                 fill: fillValue,
                 'fill-opacity': curve.opacity,
@@ -1187,11 +1235,11 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         // Styles with an ink outline draw the top edge in ink (toon seams, de-stijl rules,
         // draftsman technical lines); otherwise the line follows the fill color.
         const lineColor =
-            style.stroke.curveOutline > 0 ? palette.ink : fillValue.startsWith('#') ? fillValue : curve.color;
+            style.stroke.curveOutline > 0 ? palette.ink : (fillValue.startsWith('#') ? fillValue : curve.color);
         const lineWidth =
             style.stroke.curveOutline > 0 ? style.stroke.curveOutline : style.curveStrokeWidth;
-        group.appendChild(
-            svgEl('path', {
+        group.append(
+            svgElement('path', {
                 d: line,
                 fill: 'none',
                 stroke: lineColor,
@@ -1202,8 +1250,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'none',
             })
         );
-        group.appendChild(
-            svgEl('path', {
+        group.append(
+            svgElement('path', {
                 d: line,
                 fill: 'none',
                 stroke: 'transparent',
@@ -1214,43 +1262,43 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'stroke',
             })
         );
-        curvesGroup.appendChild(group);
-    });
-    svg.appendChild(curvesGroup);
+        curvesGroup.append(group);
+    }
+    svg.append(curvesGroup);
 
     // In-plot curve labels at each peak, in the style's label treatment.
-    const labelsGroup = svgEl('g', { class: 'curve-labels' });
-    model.curves.forEach((curve, index) => {
+    const labelsGroup = svgElement('g', { class: 'curve-labels' });
+    for (const [index, curve] of model.curves.entries()) {
         const label = (curve.label ?? '').trim();
         const peak = peakPoint(curve);
-        if (peak === null) return;
+        if (peak === null) continue;
         const p = geom.toPx(peak.x, peak.y);
         let ty = p.y - 12;
         if (ty < geom.plotY0 + 14) ty = p.y + 20;
         if (label !== '') {
             renderCurveLabel(labelsGroup, geom, label, index, p.x, ty);
         } else if (options.editing) {
-            labelsGroup.appendChild(
+            labelsGroup.append(
                 hintPlaceholder(p.x, ty - 5, 60, palette, {
                     'data-curve-index': index,
                     'data-edit-field': 'curve-label',
                 })
             );
         }
-    });
-    svg.appendChild(labelsGroup);
+    }
+    svg.append(labelsGroup);
     // Axis lines / arrowheads / labels sit above every curve so nothing can occlude them.
-    svg.appendChild(axes);
+    svg.append(axes);
 
     // Events (moments in time). The gate line + baseline diamond are appended to `axes` so they
     // paint ABOVE the translucent curve fills — a gate must stay readable wherever a curve runs.
     // The label + wrapped note sit in the reserved band above the plot, joined by a short leader
     // tick. In edit mode each callout reveals a hover ✕ (remove) and empty labels show a hint.
-    model.events.forEach((event, index) => {
+    for (const [index, event] of model.events.entries()) {
         const callout = geom.eventCallouts[index];
         const px = geom.eventXs[index];
-        axes.appendChild(
-            svgEl('line', {
+        axes.append(
+            svgElement('line', {
                 x1: round(px),
                 y1: round(geom.plotY0),
                 x2: round(px),
@@ -1264,8 +1312,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             })
         );
         const dm = 5;
-        axes.appendChild(
-            svgEl('polygon', {
+        axes.append(
+            svgElement('polygon', {
                 points: `${round(px)},${round(geom.baselineY - dm)} ${round(px + dm)},${round(
                     geom.baselineY
                 )} ${round(px)},${round(geom.baselineY + dm)} ${round(px - dm)},${round(
@@ -1280,11 +1328,11 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             })
         );
 
-        const group = svgEl('g', { class: 'event-group' });
+        const group = svgElement('g', { class: 'event-group' });
         const blockBottom =
             geom.eventNoteTop + callout.noteLines.length * R.eventNote.lineHeight;
-        group.appendChild(
-            svgEl('line', {
+        group.append(
+            svgElement('line', {
                 x1: round(px),
                 y1: round(blockBottom),
                 x2: round(px),
@@ -1297,8 +1345,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         );
         const label = (event.label ?? '').trim();
         if (label !== '') {
-            group.appendChild(
-                textEl(label, {
+            group.append(
+                textElement(label, {
                     x: round(callout.textX),
                     y: round(geom.eventLabelY),
                     'text-anchor': callout.anchor,
@@ -1312,19 +1360,19 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 })
             );
         } else if (options.editing) {
-            group.appendChild(
+            group.append(
                 hintPlaceholder(callout.textX, geom.eventLabelY - 5, 36, palette, {
                     'data-edit-field': 'event',
                     'data-event-index': index,
                 })
             );
         }
-        callout.noteLines.forEach((line, j) => {
-            group.appendChild(
-                textEl(line, {
+        for (const [index_, line] of callout.noteLines.entries()) {
+            group.append(
+                textElement(line, {
                     x: round(callout.textX),
                     y: round(
-                        geom.eventNoteTop + j * R.eventNote.lineHeight + R.eventNote.size
+                        geom.eventNoteTop + index_ * R.eventNote.lineHeight + R.eventNote.size
                     ),
                     'text-anchor': callout.anchor,
                     fill: palette.legendMuted,
@@ -1335,21 +1383,21 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                     'pointer-events': 'none',
                 })
             );
-        });
+        }
         if (options.editing) {
-            group.appendChild(
+            group.append(
                 removeBadge(px, blockBottom + 12, 9, 11, 4, palette, {
                     class: 'event-remove',
                     'data-event-remove': index,
                 })
             );
         }
-        svg.appendChild(group);
-    });
+        svg.append(group);
+    }
 
     // WYSIWYG "add event": a "+" at the right end of the callout band (mirrors the phase-row "+").
     if (options.editing && model.events.length < MAX_EVENTS) {
-        svg.appendChild(
+        svg.append(
             addBadge(geom.plotX1 + 28, geom.eventLabelY - 5, palette.eventLabel, {
                 class: 'event-add',
                 'data-event-add': 1,
@@ -1360,23 +1408,23 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // Legend below: one editable block per curve (first line = label, rest = notes). Rows are
     // displayed in REVERSE paint order: the front-most curve (last in the model) sits on top.
     // When an export drops the legend, geom.legendRows is empty and this loop paints nothing.
-    const legendGroup = svgEl('g', { class: 'legend' });
+    const legendGroup = svgElement('g', { class: 'legend' });
     const labelLineH = R.legendLabel.size + 6;
     const noteLineH = R.legendNote.lineHeight;
     const displayOrder = [...model.curves.keys()].reverse();
-    geom.legendRows.forEach((row, slot) => {
+    for (const [slot, row] of geom.legendRows.entries()) {
         const curveIndex = displayOrder[slot];
         const curve = model.curves[curveIndex];
         const swatchX = geom.legendX + L.legendRemoveZone;
         const textX = swatchX + L.legendSwatch + L.legendSwatchGap;
         const rowHeight = row.height - L.legendRowGap;
-        const block = svgEl('g', {
+        const block = svgElement('g', {
             class: 'legend-block',
             'data-edit-field': 'legend-block',
             'data-curve-index': curveIndex,
         });
-        block.appendChild(
-            svgEl('rect', {
+        block.append(
+            svgElement('rect', {
                 x: round(geom.legendX),
                 y: round(row.top),
                 width: round(
@@ -1391,9 +1439,9 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         // reorders the curve's layer, and a ✕ that removes it.
         if (options.editing) {
             const rowMidY = row.top + L.legendSwatch / 2;
-            const handle = svgEl('g', { class: 'legend-drag', 'data-curve-drag': curveIndex });
-            handle.appendChild(
-                svgEl('rect', {
+            const handle = svgElement('g', { class: 'legend-drag', 'data-curve-drag': curveIndex });
+            handle.append(
+                svgElement('rect', {
                     x: round(geom.legendX),
                     y: round(row.top),
                     width: 18,
@@ -1403,8 +1451,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             );
             for (const dotX of [geom.legendX + 5, geom.legendX + 13]) {
                 for (const dotY of [rowMidY - 4, rowMidY, rowMidY + 4]) {
-                    handle.appendChild(
-                        svgEl('circle', {
+                    handle.append(
+                        svgElement('circle', {
                             cx: round(dotX),
                             cy: round(dotY),
                             r: 1.6,
@@ -1413,17 +1461,17 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                     );
                 }
             }
-            block.appendChild(handle);
+            block.append(handle);
 
-            block.appendChild(
+            block.append(
                 removeBadge(geom.legendX + 30, rowMidY, 8, 10, 4, palette, {
                     class: 'legend-remove',
                     'data-curve-remove': curveIndex,
                 })
             );
         }
-        block.appendChild(
-            svgEl('rect', {
+        block.append(
+            svgElement('rect', {
                 x: round(swatchX),
                 y: round(row.top),
                 width: L.legendSwatch,
@@ -1441,8 +1489,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             })
         );
         if (row.label !== '') {
-            block.appendChild(
-                textEl(row.label, {
+            block.append(
+                textElement(row.label, {
                     x: round(textX),
                     y: round(row.top + R.legendLabel.size),
                     fill: palette.legendText,
@@ -1453,18 +1501,18 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 })
             );
         } else if (options.editing) {
-            block.appendChild(
+            block.append(
                 dashedHintLine(textX, textX + 120, row.top + labelLineH - 6, palette)
             );
         }
         // Notes get no placeholder: the wrapped note lines would otherwise show a long dash rule.
         if (row.noteLines.length > 0) {
-            row.noteLines.forEach((line, j) => {
-                block.appendChild(
-                    textEl(line, {
+            for (const [index, line] of row.noteLines.entries()) {
+                block.append(
+                    textElement(line, {
                         x: round(textX),
                         y: round(
-                            row.top + labelLineH + j * noteLineH + R.legendNote.size
+                            row.top + labelLineH + index * noteLineH + R.legendNote.size
                         ),
                         fill: palette.legendMuted,
                         'font-size': R.legendNote.size,
@@ -1473,18 +1521,18 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                         'pointer-events': 'none',
                     })
                 );
-            });
+            }
         }
-        legendGroup.appendChild(block);
-    });
+        legendGroup.append(block);
+    }
 
     // WYSIWYG "add curve": a dashed placeholder row at the bottom of the legend, in place of the
     // old toolbar button. Clicking it appends a curve and immediately selects its label for typing.
     if (options.editing && model.curves.length < MAX_CURVES) {
-        const addRow = svgEl('g', { class: 'legend-add', 'data-curve-add': 1 });
+        const addRow = svgElement('g', { class: 'legend-add', 'data-curve-add': 1 });
         const textX = geom.legendX + L.legendRemoveZone;
-        addRow.appendChild(
-            svgEl('rect', {
+        addRow.append(
+            svgElement('rect', {
                 x: round(geom.legendX),
                 y: round(geom.legendBottom),
                 width: round(
@@ -1495,8 +1543,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'all',
             })
         );
-        addRow.appendChild(
-            textEl('+ Add curve', {
+        addRow.append(
+            textElement('+ Add curve', {
                 x: round(textX),
                 y: round(geom.legendBottom + R.legendLabel.size - 2),
                 fill: palette.legendMuted,
@@ -1506,15 +1554,15 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'none',
             })
         );
-        legendGroup.appendChild(addRow);
+        legendGroup.append(addRow);
     }
 
-    svg.appendChild(legendGroup);
+    svg.append(legendGroup);
 
     // Attribution (exports only): right-aligned in the strip below the frame's bottom border.
     if (options.attribution) {
-        svg.appendChild(
-            textEl('https://share.lakitna.nl/shift-left-right-builder', {
+        svg.append(
+            textElement('https://share.lakitna.nl/shift-left-right-builder', {
                 x: round(geom.width),
                 y: round(geom.frameBottom + 12),
                 'text-anchor': 'end',
@@ -1527,7 +1575,9 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     return { svg, geom };
 }
 
-/** Serialize the SVG element into a standalone document string, optionally embedding font CSS. */
+/**
+Serialize the SVG element into a standalone document string, optionally embedding font CSS.
+*/
 export function serializeSvg(svg: SVGSVGElement, options: { embedFontCss?: string } = {}): string {
     const clone = svg.cloneNode(true) as SVGSVGElement;
     clone.setAttribute('xmlns', SVG_NS);
@@ -1537,10 +1587,10 @@ export function serializeSvg(svg: SVGSVGElement, options: { embedFontCss?: strin
         clone.setAttribute('height', String(viewBox[3]));
     }
     if (options.embedFontCss) {
-        const styleEl = document.createElementNS(SVG_NS, 'style');
-        styleEl.setAttribute('type', 'text/css');
-        styleEl.textContent = options.embedFontCss;
-        clone.insertBefore(styleEl, clone.firstChild);
+        const styleElement = document.createElementNS(SVG_NS, 'style');
+        styleElement.setAttribute('type', 'text/css');
+        styleElement.textContent = options.embedFontCss;
+        clone.insertBefore(styleElement, clone.firstChild);
     }
     return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}`;
 }

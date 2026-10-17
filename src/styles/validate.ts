@@ -15,15 +15,17 @@ function channelLuminance(value8bit: number): number {
 export function relativeLuminance(hex: string): number {
     const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
     if (m === null) return 0;
-    const n = parseInt(m[1], 16);
+    const n = Number.parseInt(m[1], 16);
     return (
-        0.2126 * channelLuminance((n >> 16) & 0xff) +
-        0.7152 * channelLuminance((n >> 8) & 0xff) +
-        0.0722 * channelLuminance(n & 0xff)
+        0.2126 * channelLuminance((n >> 16) & 0xFF) +
+        0.7152 * channelLuminance((n >> 8) & 0xFF) +
+        0.0722 * channelLuminance(n & 0xFF)
     );
 }
 
-/** Contrast ratio between two #rrggbb colors (1..21). Ignores alpha suffixes. */
+/**
+Contrast ratio between two #rrggbb colors (1..21). Ignores alpha suffixes.
+*/
 export function contrastRatio(a: string, b: string): number {
     const la = relativeLuminance(a.slice(0, 7));
     const lb = relativeLuminance(b.slice(0, 7));
@@ -49,12 +51,12 @@ export interface StyleIssue {
  */
 export function validateStyle(style: GraphStyle, strictText: boolean): StyleIssue[] {
     const issues: StyleIssue[] = [];
-    const fillsCarryBoundaries =
+    const isFillsCarryBoundaries =
         style.stroke.curveOutline === 0 && style.fills.mode === 'solid';
     for (const theme of ['light', 'dark'] as const) {
         const palette = style.canvas[theme];
         const fills = style.curves.palette[theme];
-        if (fillsCarryBoundaries && style.curves.colorSource === 'palette') {
+        if (isFillsCarryBoundaries && style.curves.colorSource === 'palette') {
             for (const [index, fill] of fills.entries()) {
                 const ratio = contrastRatio(fill, palette.background);
                 if (ratio < 3) {
@@ -92,7 +94,9 @@ export function validateStyle(style: GraphStyle, strictText: boolean): StyleIssu
     return issues;
 }
 
-/** Validate every registered style; returns all issues found. */
+/**
+Validate every registered style; returns all issues found.
+*/
 export function validateAllStyles(): StyleIssue[] {
     return STYLES.flatMap((style) => validateStyle(style, style.id === 'contrast'));
 }

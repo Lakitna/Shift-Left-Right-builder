@@ -33,21 +33,29 @@ export const STORAGE_KEYS = {
  */
 const HASH_SYNC_TIMEOUT_MS = 15_000;
 
-/** How long to allow for a full re-render (fonts + layout) after a model load. */
+/**
+How long to allow for a full re-render (fonts + layout) after a model load.
+*/
 export const RENDER_TIMEOUT_MS = 15_000;
 
 export interface GotoOptions {
-    /** Hash to open with, including the leading `#`. */
+    /**
+    Hash to open with, including the leading `#`.
+    */
     hash?: string;
-    /** localStorage entries to install before the app boots. */
+    /**
+    localStorage entries to install before the app boots.
+    */
     storage?: Record<string, string>;
 }
 
-/** Install localStorage values before any page script runs. */
+/**
+Install localStorage values before any page script runs.
+*/
 export async function seedStorage(page: Page, storage: Record<string, string>): Promise<void> {
     await page.addInitScript((entries: Record<string, string>) => {
         for (const [key, value] of Object.entries(entries)) {
-            window.localStorage.setItem(key, value);
+            globalThis.localStorage.setItem(key, value);
         }
     }, storage);
 }
@@ -64,7 +72,7 @@ export async function seedStorage(page: Page, storage: Record<string, string>): 
 export async function spyOnClipboardWrites(page: Page): Promise<() => Promise<string[]>> {
     await page.addInitScript(() => {
         const written: string[] = [];
-        (window as unknown as { __clipboardWrites: string[] }).__clipboardWrites = written;
+        (globalThis as unknown as { __clipboardWrites: string[] }).__clipboardWrites = written;
 
         const clipboard = navigator.clipboard;
         if (clipboard === undefined) return;
@@ -78,11 +86,13 @@ export async function spyOnClipboardWrites(page: Page): Promise<() => Promise<st
 
     return () =>
         page.evaluate(
-            () => (window as unknown as { __clipboardWrites: string[] }).__clipboardWrites
+            () => (globalThis as unknown as { __clipboardWrites: string[] }).__clipboardWrites
         );
 }
 
-/** Open the app and wait until it has painted a graph. */
+/**
+Open the app and wait until it has painted a graph.
+*/
 export async function gotoApp(page: Page, options: GotoOptions = {}): Promise<void> {
     const { hash = '', storage } = options;
     if (storage !== undefined) await seedStorage(page, storage);
@@ -96,7 +106,9 @@ export async function waitForGraph(page: Page): Promise<void> {
     await expect(page.locator('#graph-container .curve-fill').first()).toBeAttached();
 }
 
-/** Apply one of the toolbar presets by its visible name. */
+/**
+Apply one of the toolbar presets by its visible name.
+*/
 export async function applyPreset(
     page: Page,
     name: 'Schematic' | 'Detailed' | 'Empty'
@@ -117,12 +129,14 @@ export async function openHeaderMenu(page: Page, id: 'btn-style' | 'btn-share'):
 }
 
 export async function currentHash(page: Page): Promise<string> {
-    return page.evaluate(() => window.location.hash);
+    return page.evaluate(() => globalThis.location.hash);
 }
 
-/** Wait until the debounced URL sync has written a hash containing `needle`. */
+/**
+Wait until the debounced URL sync has written a hash containing `needle`.
+*/
 export async function waitForHashContaining(page: Page, needle: string): Promise<void> {
-    await page.waitForFunction((value) => window.location.hash.includes(value), needle, {
+    await page.waitForFunction((value) => globalThis.location.hash.includes(value), needle, {
         timeout: HASH_SYNC_TIMEOUT_MS,
     });
 }
@@ -136,22 +150,26 @@ export async function waitForHashContaining(page: Page, needle: string): Promise
  * (There is only ever one pending write: `syncUrl` cancels the previous timer.)
  */
 export async function waitForHashChange(page: Page, previous: string): Promise<string> {
-    await page.waitForFunction((before) => window.location.hash !== before, previous, {
+    await page.waitForFunction((before) => globalThis.location.hash !== before, previous, {
         timeout: HASH_SYNC_TIMEOUT_MS,
     });
     return currentHash(page);
 }
 
-/** Read a numeric SVG attribute off an element. */
+/**
+Read a numeric SVG attribute off an element.
+*/
 export async function numberAttribute(page: Page, selector: string, name: string): Promise<number> {
     const raw = await page.locator(selector).first().getAttribute(name);
     if (raw === null) throw new Error(`${selector} has no attribute ${name}`);
     const value = Number(raw);
-    if (!Number.isFinite(value)) throw new Error(`${selector}@${name} is not a number: ${raw}`);
+    if (!Number.isFinite(value)) throw new TypeError(`${selector}@${name} is not a number: ${raw}`);
     return value;
 }
 
-/** Drag an element by a viewport-pixel delta with raw mouse input. */
+/**
+Drag an element by a viewport-pixel delta with raw mouse input.
+*/
 export async function dragElement(
     page: Page,
     selector: string,
@@ -175,7 +193,9 @@ export async function clickRevealedBadge(
     await mouseClick(page, badgeSelector);
 }
 
-/** The x of a control-point handle, in SVG user units. */
+/**
+The x of a control-point handle, in SVG user units.
+*/
 export function handleX(page: Page, index: number): Promise<number> {
     return numberAttribute(page, `.point-handle[data-handle-index="${index}"]`, 'cx');
 }
@@ -194,7 +214,7 @@ export async function dragCurveBody(
 ): Promise<boolean> {
     const start = await page.evaluate((index) => {
         const svg = document.querySelector<SVGSVGElement>('#graph-container svg.graph-svg');
-        const body = document.querySelector<SVGPathElement>(`[data-curve-move="${index}"]`);
+        const body = document.querySelector<SVGPathElement>(`[data-curve-move="${CSS.escape(index)}"]`);
         if (svg === null || body === null) return null;
 
         const box = svg.getBoundingClientRect();
@@ -250,7 +270,9 @@ function assertInsideViewport(page: Page, point: { x: number; y: number }, what:
     }
 }
 
-/** Raw pointer drag over the graph, in viewport pixels. */
+/**
+Raw pointer drag over the graph, in viewport pixels.
+*/
 export async function mouseDrag(
     page: Page,
     start: { x: number; y: number },
@@ -267,7 +289,9 @@ export async function mouseDrag(
     await page.mouse.up();
 }
 
-/** Read a box until two consecutive reads agree, so an in-flight scroll animation cannot mislead us. */
+/**
+Read a box until two consecutive reads agree, so an in-flight scroll animation cannot mislead us.
+*/
 async function stableBox(page: Page, locator: Locator) {
     let box = await locator.boundingBox();
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -304,7 +328,7 @@ async function scrollIntoViewport(page: Page, locator: Locator): Promise<void> {
         const dy = centreY < 0 || centreY > viewport.height ? centreY - viewport.height / 2 : 0;
         if (dx === 0 && dy === 0) return;
 
-        await page.evaluate((delta) => window.scrollBy(delta.dx, delta.dy), { dx, dy });
+        await page.evaluate((delta) => { window.scrollBy(delta.dx, delta.dy); }, { dx, dy });
         await page.waitForTimeout(50);
     }
 }
@@ -337,7 +361,9 @@ export async function elementCentre(
     return point;
 }
 
-/** Click a graph element with raw mouse input (see the note at the top of this file). */
+/**
+Click a graph element with raw mouse input (see the note at the top of this file).
+*/
 export async function mouseClick(
     page: Page,
     selector: string,
@@ -357,7 +383,7 @@ export async function mouseClick(
 export async function curvePeakPoint(page: Page, index: number): Promise<{ x: number; y: number }> {
     const point = await page.evaluate((curveIndex) => {
         const path = document.querySelector<SVGPathElement>(
-            `#graph-container g.curves > g[data-curve-index="${curveIndex}"] .curve-line`
+            `#graph-container g.curves > g[data-curve-index="${CSS.escape(curveIndex)}"] .curve-line`
         );
         const svg = path?.ownerSVGElement ?? null;
         if (path === null || svg === null) return null;
@@ -386,19 +412,25 @@ export async function curvePeakPoint(page: Page, index: number): Promise<{ x: nu
     return point;
 }
 
-/** Select the curve at `index` and wait for its editing overlay. */
+/**
+Select the curve at `index` and wait for its editing overlay.
+*/
 export async function selectCurve(page: Page, index = 0): Promise<void> {
     const point = await curvePeakPoint(page, index);
     await page.mouse.click(point.x, point.y);
     await expect(page.locator('.editing-ui .point-handle').first()).toBeAttached();
 }
 
-/** The `<input>` of a toolbar checkbox, matched by its visible caption. */
+/**
+The `<input>` of a toolbar checkbox, matched by its visible caption.
+*/
 export function toolbarCheck(page: Page, caption: string) {
     return page.locator('#editor-toolbar label.tool-check', { hasText: caption }).locator('input');
 }
 
-/** A toolbar button, matched by its title (the toolbar buttons carry no ids). */
+/**
+A toolbar button, matched by its title (the toolbar buttons carry no ids).
+*/
 export function toolbarButton(page: Page, title: string) {
     return page.locator(`#editor-toolbar button[title="${title}"]`);
 }

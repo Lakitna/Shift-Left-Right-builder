@@ -68,8 +68,8 @@ describe('REQ-01 model contract: clampCoord', () => {
     });
 
     it('maps non-finite values to 0', () => {
-        expect(clampCoord(Number.NaN)).toBe(0);
-        expect(clampCoord(Number.POSITIVE_INFINITY)).toBe(0);
+        expect(clampCoord(NaN)).toBe(0);
+        expect(clampCoord(Infinity)).toBe(0);
         expect(clampCoord(Number.NEGATIVE_INFINITY)).toBe(0);
     });
 });
@@ -83,7 +83,7 @@ describe('REQ-01 model contract: clampOpacity', () => {
     });
 
     it('falls back to the default opacity for non-finite input', () => {
-        expect(clampOpacity(Number.NaN)).toBe(DEFAULT_OPACITY);
+        expect(clampOpacity(NaN)).toBe(DEFAULT_OPACITY);
         expect(clampOpacity(Number.NEGATIVE_INFINITY)).toBe(DEFAULT_OPACITY);
     });
 });
@@ -477,7 +477,7 @@ describe('REQ-06 phase operations', () => {
         const model = makeModel();
         expect(canAddPhase(model)).toBe(true);
         expect(addPhase(model)).toBe(true);
-        expect(model.phases[model.phases.length - 1].label).toBe('Phase 4');
+        expect(model.phases.at(-1).label).toBe('Phase 4');
 
         const full = makeModel({
             phases: Array.from({ length: MAX_PHASES }, () => makePhase()),

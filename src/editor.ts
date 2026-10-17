@@ -17,7 +17,7 @@
  * commit (history + full re-render) or just sync the URL (live drag).
  */
 
-import { addBadge, svgEl } from './dom';
+import { addBadge, svgEl as svgElement } from './dom';
 import { startGesture } from './gesture';
 import {
     addCurve,
@@ -65,11 +65,17 @@ import { makeCheck, makeElement } from './ui';
 
 export interface EditorHost {
     getModel(): GraphModel;
-    /** Replace the whole model (preset application). The host pushes history + re-renders. */
+    /**
+    Replace the whole model (preset application). The host pushes history + re-renders.
+    */
     replaceModel(next: GraphModel): void;
-    /** A finished change: push to history, re-render everything, sync URL. */
+    /**
+    A finished change: push to history, re-render everything, sync URL.
+    */
     onCommit(): void;
-    /** An in-progress change (dragging, live color): sync the URL only. */
+    /**
+    An in-progress change (dragging, live color): sync the URL only.
+    */
     onLive(): void;
     undo(): void;
     redo(): void;
@@ -81,7 +87,9 @@ export interface GraphEditor {
     render(): void;
     deleteSelected(): void;
     clearSelection(): void;
-    /** Nudge the selected control point by (dx, dy) model units; true if a point was moved. */
+    /**
+    Nudge the selected control point by (dx, dy) model units; true if a point was moved.
+    */
     nudge(dx: number, dy: number): boolean;
 }
 
@@ -91,29 +99,32 @@ export interface GraphEditor {
  * one-liner and the fixup rules cannot drift apart.
  */
 
-/** The index `sel` takes after the item at `removed` leaves the list (null when it was removed). */
+/**
+The index `sel` takes after the item at `removed` leaves the list (null when it was removed).
+*/
 function afterRemove(sel: number | null, removed: number): number | null {
     if (sel === null || sel === removed) return null;
     return sel > removed ? sel - 1 : sel;
 }
 
-/** The index `sel` takes after the item at `from` is re-inserted at `to` (splice semantics). */
+/**
+The index `sel` takes after the item at `from` is re-inserted at `to` (splice semantics).
+*/
 function afterMove(sel: number | null, from: number, to: number): number | null {
     if (sel === null) return null;
     if (sel === from) return to;
     if (from < to && sel > from && sel <= to) return sel - 1;
-    if (from > to && sel >= to && sel < from) return sel + 1;
-    return sel;
+    return from > to && sel >= to && sel < from ? sel + 1 : sel;
 }
 
 export function createEditor(
-    toolbarEl: HTMLElement,
-    canvasEl: HTMLElement,
+    toolbarElement: HTMLElement,
+    canvasElement: HTMLElement,
     host: EditorHost
 ): GraphEditor {
     let selectedCurve: number | null = null;
     let selectedPoint: CurvePoint | null = null;
-    let snapEnabled = false;
+    let isSnapEnabled = false;
     let geom: GraphGeom | null = null;
     let svg: SVGSVGElement | null = null;
     let handlePoints: CurvePoint[] = [];
@@ -126,7 +137,9 @@ export function createEditor(
      */
     const toolbarSegments: {
         element: HTMLElement;
-        /** Divider rendered before this segment (null for the first); hides with it. */
+        /**
+        Divider rendered before this segment (null for the first); hides with it.
+        */
         divider: HTMLElement | null;
         visible(): boolean;
     }[] = [];
@@ -134,14 +147,16 @@ export function createEditor(
 
     buildToolbar();
 
-    canvasEl.addEventListener('pointerdown', onPointerDown);
-    canvasEl.addEventListener('dblclick', onDoubleClick);
+    canvasElement.addEventListener('pointerdown', onPointerDown);
+    canvasElement.addEventListener('dblclick', onDoubleClick);
 
     function model(): GraphModel {
         return host.getModel();
     }
 
-    /** The editor accent (selection rings, handles, "+" badges) follows the style's canvas accent. */
+    /**
+    The editor accent (selection rings, handles, "+" badges) follows the style's canvas accent.
+    */
     function accent(): string {
         const canvas = getActiveStyle().canvas;
         return (isDarkMode() ? canvas.dark : canvas.light).eventLabel;
@@ -150,7 +165,7 @@ export function createEditor(
     // --- Toolbar -------------------------------------------------------------
 
     function buildToolbar(): void {
-        toolbarEl.textContent = '';
+        toolbarElement.textContent = '';
         // Three segments separated by visual dividers: generic (always), curve (selection only),
         // graph (always). Within the curve segment, controls that cannot apply to the current
         // curve/selection are disabled rather than hidden, so nothing shifts.
@@ -158,17 +173,17 @@ export function createEditor(
             let divider: HTMLElement | null = null;
             if (toolbarSegments.length > 0) {
                 divider = makeElement('div', 'tool-divider');
-                toolbarEl.appendChild(divider);
+                toolbarElement.append(divider);
             }
             const element = makeElement('div', 'tool-segment');
-            toolbarEl.appendChild(element);
+            toolbarElement.append(element);
             toolbarSegments.push({ element, divider, visible });
             return element;
         };
         const group = (parent: HTMLElement): HTMLElement => {
-            const el = makeElement('div', 'tool-group');
-            parent.appendChild(el);
-            return el;
+            const element = makeElement('div', 'tool-group');
+            parent.append(element);
+            return element;
         };
         const button = (
             parent: HTMLElement,
@@ -179,7 +194,7 @@ export function createEditor(
         ): void => {
             const b = makeElement('button', { label, title, onClick });
             b.type = 'button';
-            parent.appendChild(b);
+            parent.append(b);
             toolbarSyncs.push(() => (b.disabled = !enabled()));
         };
         const check = (
@@ -190,7 +205,7 @@ export function createEditor(
             enabled: () => boolean = () => true
         ): void => {
             const { label, input } = makeCheck(caption, set);
-            parent.appendChild(label);
+            parent.append(label);
             toolbarSyncs.push(() => {
                 input.checked = get();
                 input.disabled = !enabled();
@@ -219,17 +234,19 @@ export function createEditor(
             input.max = String(spec.max);
             input.step = spec.step;
             input.title = spec.title;
-            input.addEventListener('input', () => spec.setLive(Number(input.value)));
+            input.addEventListener('input', () => { spec.setLive(Number(input.value)); });
             input.addEventListener('change', spec.commit);
             wrap.append(span, input);
-            parent.appendChild(wrap);
+            parent.append(wrap);
             toolbarSyncs.push(() => {
                 input.value = String(spec.get());
                 input.disabled = !spec.enabled();
             });
         };
 
-        /** The selected curve, or undefined when nothing (or something stale) is picked. */
+        /**
+        The selected curve, or undefined when nothing (or something stale) is picked.
+        */
         const selected = (): Curve | undefined =>
             selectedCurve === null ? undefined : model().curves[selectedCurve];
 
@@ -239,14 +256,14 @@ export function createEditor(
             gHistory,
             '↶',
             'Undo (Ctrl+Z)',
-            () => host.undo(),
+            () => { host.undo(); },
             () => host.canUndo()
         );
         button(
             gHistory,
             '↷',
             'Redo (Ctrl+Y)',
-            () => host.redo(),
+            () => { host.redo(); },
             () => host.canRedo()
         );
 
@@ -267,7 +284,7 @@ export function createEditor(
             host.replaceModel(cloneModel(PRESETS[Number(value)].data));
             presetSelect.value = '';
         });
-        segGeneric.appendChild(presetSelect);
+        segGeneric.append(presetSelect);
 
         const segCurve = segment(() => selected() !== undefined);
         const gCurves = group(segCurve);
@@ -276,11 +293,13 @@ export function createEditor(
             '🗑',
             'Delete selected curve',
             () => {
-                if (selectedCurve !== null && removeCurve(model(), selectedCurve)) {
-                    selectedCurve = null;
-                    selectedPoint = null;
-                    host.onCommit();
+                if (selectedCurve === null || !removeCurve(model(), selectedCurve)) {
+                    return;
                 }
+
+                selectedCurve = null;
+                selectedPoint = null;
+                host.onCommit();
             },
             () => selected() !== undefined && canRemoveCurve(model())
         );
@@ -292,10 +311,12 @@ export function createEditor(
             () => selected()?.smooth ?? false,
             (checked) => {
                 const curve = selected();
-                if (curve !== undefined) {
-                    curve.smooth = checked;
-                    host.onCommit();
+                if (curve === undefined) {
+                    return;
                 }
+
+                curve.smooth = checked;
+                host.onCommit();
             }
         );
         range(gStyle, {
@@ -312,7 +333,7 @@ export function createEditor(
                 updateCurveOpacity(selectedCurve);
                 host.onLive();
             },
-            commit: () => host.onCommit(),
+            commit: () => { host.onCommit(); },
             enabled: () => selected() !== undefined,
         });
 
@@ -322,11 +343,13 @@ export function createEditor(
             '⟨',
             'Send curve backward',
             () => {
-                if (selectedCurve !== null && moveCurve(model(), selectedCurve, -1)) {
-                    // Follow the moved curve so the selection stays on it.
-                    selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve - 1);
-                    host.onCommit();
+                if (selectedCurve === null || !moveCurve(model(), selectedCurve, -1)) {
+                    return;
                 }
+
+                // Follow the moved curve so the selection stays on it.
+                selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve - 1);
+                host.onCommit();
             },
             () => selectedCurve !== null && selectedCurve > 0
         );
@@ -335,10 +358,12 @@ export function createEditor(
             '⟩',
             'Bring curve forward',
             () => {
-                if (selectedCurve !== null && moveCurve(model(), selectedCurve, 1)) {
-                    selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve + 1);
-                    host.onCommit();
+                if (selectedCurve === null || !moveCurve(model(), selectedCurve, 1)) {
+                    return;
                 }
+
+                selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve + 1);
+                host.onCommit();
             },
             () => selectedCurve !== null && selectedCurve < model().curves.length - 1
         );
@@ -348,9 +373,9 @@ export function createEditor(
         check(
             gToggles,
             'Snap to phases',
-            () => snapEnabled,
+            () => isSnapEnabled,
             (checked) => {
-                snapEnabled = checked;
+                isSnapEnabled = checked;
             }
         );
         check(
@@ -366,12 +391,12 @@ export function createEditor(
 
     function updateToolbar(): void {
         for (const segment of toolbarSegments) {
-            const visible = segment.visible();
-            segment.element.style.display = visible ? '' : 'none';
+            const isVisible = segment.visible();
+            segment.element.style.display = isVisible ? '' : 'none';
             // A hidden segment takes its leading divider with it, so the row never shows a
             // dangling separator when the curve segment is collapsed.
             if (segment.divider !== null) {
-                segment.divider.style.display = visible ? '' : 'none';
+                segment.divider.style.display = isVisible ? '' : 'none';
             }
         }
         for (const sync of toolbarSyncs) sync();
@@ -385,11 +410,11 @@ export function createEditor(
             selectedCurve = null;
             selectedPoint = null;
         }
-        const dark = isDarkMode();
-        const result = renderGraphSvg(m, { style: getActiveStyle(), dark, editing: true });
+        const isDark = isDarkMode();
+        const result = renderGraphSvg(m, { style: getActiveStyle(), dark: isDark, editing: true });
         svg = result.svg;
         geom = result.geom; // the editor reuses the layout the SVG was built with
-        canvasEl.replaceChildren(svg);
+        canvasElement.replaceChildren(svg);
         buildOverlay(m);
         updateToolbar();
     }
@@ -397,18 +422,18 @@ export function createEditor(
     function buildOverlay(m: GraphModel): void {
         if (svg === null || geom === null) return;
         const g = geom; // capture the non-null geometry for use inside callbacks
-        const overlay = svgEl('g', { class: 'editing-ui' });
-        const acc = accent();
+        const overlay = svgElement('g', { class: 'editing-ui' });
+        const accumulator = accent();
 
         if (selectedCurve !== null) {
             const curve = m.curves[selectedCurve];
             if (curve) {
-                overlay.appendChild(
-                    svgEl('path', {
+                overlay.append(
+                    svgElement('path', {
                         class: 'curve-move',
                         d: curveLinePath(curve, g),
                         fill: 'none',
-                        stroke: acc,
+                        stroke: accumulator,
                         'stroke-width': g.style.curveStrokeWidth + 3,
                         'stroke-opacity': 0.35,
                         'stroke-linecap': 'round',
@@ -417,32 +442,32 @@ export function createEditor(
                     })
                 );
                 handlePoints = [...curve.points];
-                handlePoints.forEach((point, index) => {
+                for (const [index, point] of handlePoints.entries()) {
                     const p = pointPx(point, g);
                     const isSelected = point === selectedPoint;
-                    overlay.appendChild(
-                        svgEl('circle', {
+                    overlay.append(
+                        svgElement('circle', {
                             cx: p.x,
                             cy: p.y,
                             r: g.style.pointRadius,
                             class: 'point-handle',
                             'data-handle-index': index,
-                            fill: isSelected ? acc : '#ffffff',
-                            stroke: acc,
+                            fill: isSelected ? accumulator : '#ffffff',
+                            stroke: accumulator,
                             'stroke-width': 2,
                         })
                     );
-                });
-                for (let i = 0; i < handlePoints.length - 1; i++) {
+                }
+                for (let index = 0; index < handlePoints.length - 1; index++) {
                     // Sit the "+" on the drawn curve (spline midpoint), not on the chord between
                     // the two control points. Round to the model's integer coordinates first so
                     // the inserted point lands exactly where the handle is.
-                    const rawMid = segmentMidpoint(curve, i);
+                    const rawMid = segmentMidpoint(curve, index);
                     const midX = Math.round(rawMid.x);
                     const midY = Math.round(rawMid.y);
                     const mid = g.toPx(midX, midY);
-                    overlay.appendChild(
-                        addBadge(mid.x, mid.y, acc, {
+                    overlay.append(
+                        addBadge(mid.x, mid.y, accumulator, {
                             class: 'insert-handle',
                             'data-insert-x': midX,
                             'data-insert-y': midY,
@@ -457,15 +482,15 @@ export function createEditor(
 
         // "+" at the end of the phase row: WYSIWYG add-phase (append; drag to reposition).
         if (canAddPhase(m)) {
-            overlay.appendChild(
-                addBadge(g.plotX1 + 28, g.phaseLabelY - 5, acc, {
+            overlay.append(
+                addBadge(g.plotX1 + 28, g.phaseLabelY - 5, accumulator, {
                     class: 'phase-add',
                     'data-phase-add': 1,
                 })
             );
         }
 
-        svg.appendChild(overlay);
+        svg.append(overlay);
     }
 
     // --- Live updates during a drag -----------------------------------------
@@ -474,18 +499,19 @@ export function createEditor(
         index: number
     ): { fill: SVGPathElement; line: SVGPathElement; hit: SVGPathElement } | null {
         if (svg === null) return null;
-        const group = svg.querySelector(`.curves g[data-curve-index="${index}"]`);
+        const group = svg.querySelector(`.curves g[data-curve-index="${CSS.escape(index)}"]`);
         if (group === null) return null;
         // Query by class, not by child order: live repaints must not break if render.ts ever
         // adds or reorders a path inside the curve group.
         const fill = group.querySelector<SVGPathElement>('.curve-fill');
         const line = group.querySelector<SVGPathElement>('.curve-line');
         const hit = group.querySelector<SVGPathElement>('.curve-hit');
-        if (fill === null || line === null || hit === null) return null;
-        return { fill, line, hit };
+        return fill === null || line === null || hit === null ? null : { fill, line, hit };
     }
 
-    /** Repaint a curve's geometry after a live point drag. */
+    /**
+    Repaint a curve's geometry after a live point drag.
+    */
     function updateCurve(index: number): void {
         if (geom === null) return;
         const curve = model().curves[index];
@@ -550,17 +576,17 @@ export function createEditor(
         );
         const dm = 5;
         const byY = g.baselineY;
-        const line = svg.querySelector(`[data-event-line="${index}"]`);
+        const line = svg.querySelector(`[data-event-line="${CSS.escape(index)}"]`);
         if (line !== null) {
             line.setAttribute('x1', String(px));
             line.setAttribute('x2', String(px));
         }
-        const leader = svg.querySelector(`[data-event-leader="${index}"]`);
+        const leader = svg.querySelector(`[data-event-leader="${CSS.escape(index)}"]`);
         if (leader !== null) {
             leader.setAttribute('x1', String(px));
             leader.setAttribute('x2', String(px));
         }
-        const diamond = svg.querySelector(`[data-event-diamond="${index}"]`);
+        const diamond = svg.querySelector(`[data-event-diamond="${CSS.escape(index)}"]`);
         if (diamond !== null) {
             diamond.setAttribute(
                 'points',
@@ -568,10 +594,10 @@ export function createEditor(
             );
         }
         svg.querySelectorAll(
-            `text[data-event-index="${index}"], text[data-event-note="${index}"]`
-        ).forEach((el) => {
-            el.setAttribute('x', String(textX));
-            el.setAttribute('text-anchor', anchor);
+            `text[data-event-index="${CSS.escape(index)}"], text[data-event-note="${CSS.escape(index)}"]`
+        ).forEach((element) => {
+            element.setAttribute('x', String(textX));
+            element.setAttribute('text-anchor', anchor);
         });
     }
 
@@ -617,8 +643,8 @@ export function createEditor(
         if (insert !== null) {
             const curveIndex = Number(insert.getAttribute('data-curve-index'));
             const x = Number(insert.getAttribute('data-insert-x'));
-            const yAttr = insert.getAttribute('data-insert-y');
-            const y = yAttr === null ? undefined : Number(yAttr);
+            const yAttribute = insert.getAttribute('data-insert-y');
+            const y = yAttribute === null ? undefined : Number(yAttribute);
             if (insertPoint(model(), curveIndex, x, y)) {
                 selectedCurve = curveIndex;
                 selectedPoint = null;
@@ -653,7 +679,7 @@ export function createEditor(
             if (added !== null) {
                 host.onCommit();
                 const index = model().events.indexOf(added);
-                const label = svg?.querySelector(`text[data-event-index="${index}"]`);
+                const label = svg?.querySelector(`text[data-event-index="${CSS.escape(index)}"]`);
                 if (label instanceof SVGElement) startInline(label);
             }
             return;
@@ -667,7 +693,7 @@ export function createEditor(
                 selectedCurve = index;
                 selectedPoint = null;
                 host.onCommit();
-                const block = svg?.querySelector(`.legend-block[data-curve-index="${index}"]`);
+                const block = svg?.querySelector(`.legend-block[data-curve-index="${CSS.escape(index)}"]`);
                 if (block instanceof SVGElement) startInline(block);
             }
             return;
@@ -742,25 +768,28 @@ export function createEditor(
             return;
         }
 
-        if (selectedCurve !== null) {
-            selectedCurve = null;
-            selectedPoint = null;
-            render();
+        if (selectedCurve === null) {
+            return;
         }
+
+        selectedCurve = null;
+        selectedPoint = null;
+        render();
     }
 
     function onDoubleClick(event: MouseEvent): void {
         const target = event.target as Element;
         if (target.closest('[data-edit-field]') !== null) return;
-        const curveEl = target.closest('[data-curve-index]');
-        if (curveEl === null) return;
-        const curveIndex = Number(curveEl.getAttribute('data-curve-index'));
+        const curveElement = target.closest('[data-curve-index]');
+        if (curveElement === null) return;
+        const curveIndex = Number(curveElement.getAttribute('data-curve-index'));
         const point = svgPointToModel(event.clientX, event.clientY);
-        if (point === null) return;
-        if (insertPoint(model(), curveIndex, clampCoord(point.x))) {
-            selectedCurve = curveIndex;
-            host.onCommit();
+        if ((point === null) || !insertPoint(model(), curveIndex, clampCoord(point.x))) {
+            return;
         }
+
+        selectedCurve = curveIndex;
+        host.onCommit();
     }
 
     function startDrag(handleIndex: number, event: PointerEvent): void {
@@ -775,7 +804,7 @@ export function createEditor(
                 const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
                 if (mapped === null) return;
                 const x =
-                    state.event.shiftKey || snapEnabled
+                    state.event.shiftKey || isSnapEnabled
                         ? nearestPhaseX(mapped.x, model().phases.length)
                         : mapped.x;
                 setPoint(model(), curveIndex, point, clampCoord(x), clampCoord(mapped.y));
@@ -783,12 +812,14 @@ export function createEditor(
                 repositionHandles();
                 host.onLive();
             },
-            onEnd: () => host.onCommit(),
+            onEnd: () => { host.onCommit(); },
         });
         event.preventDefault();
     }
 
-    /** Drag the selected curve's top line to translate the whole curve horizontally (rigid). */
+    /**
+    Drag the selected curve's top line to translate the whole curve horizontally (rigid).
+    */
     function startMoveCurve(curveIndex: number, event: PointerEvent): void {
         const curve = model().curves[curveIndex];
         if (curve === undefined) return;
@@ -809,7 +840,7 @@ export function createEditor(
                 repositionHandles();
                 host.onLive();
             },
-            onEnd: () => host.onCommit(),
+            onEnd: () => { host.onCommit(); },
         });
         event.preventDefault();
     }
@@ -848,13 +879,15 @@ export function createEditor(
                 const p = toSvg(state.event.clientX, state.event.clientY);
                 let targetIndex = index;
                 let best = Infinity;
-                g.phaseXs.forEach((tickX, i) => {
+                for (const [index_, tickX] of g.phaseXs.entries()) {
                     const distance = Math.abs(tickX - p.x);
-                    if (distance < best) {
-                        best = distance;
-                        targetIndex = i;
+                    if (!(distance < best)) {
+                        continue;
                     }
-                });
+
+                    best = distance;
+                    targetIndex = index_;
+                }
                 if (reorderPhase(model(), index, targetIndex)) host.onCommit();
                 else render();
             },
@@ -881,7 +914,7 @@ export function createEditor(
                 const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
                 if (mapped === null) return;
                 const x =
-                    state.event.shiftKey || snapEnabled
+                    state.event.shiftKey || isSnapEnabled
                         ? nearestBoundaryX(mapped.x, model().phases.length)
                         : mapped.x;
                 target.x = clampCoord(x);
@@ -906,7 +939,9 @@ export function createEditor(
 
     // --- Legend swatch color picker -----------------------------------------
 
-    /** Open picker, if any, so a second click can close it (programmatic clicks don't toggle). */
+    /**
+    Open picker, if any, so a second click can close it (programmatic clicks don't toggle).
+    */
     let activePicker: { input: HTMLInputElement; index: number } | null = null;
 
     /**
@@ -916,7 +951,7 @@ export function createEditor(
      * swatch again closes the stuck-open picker instead of dead-ending.
      */
     function openSwatchPicker(index: number): void {
-        const swatch = svg?.querySelector(`rect[data-swatch-index="${index}"]`);
+        const swatch = svg?.querySelector(`rect[data-swatch-index="${CSS.escape(index)}"]`);
         if (!(swatch instanceof SVGRectElement) || geom === null) return;
         const curve = model().curves[index];
         if (curve === undefined) return;
@@ -924,14 +959,14 @@ export function createEditor(
         // Opening any swatch closes a previously stuck-open picker (programmatic clicks don't
         // toggle); clicking the *same* swatch again just closes it rather than reopening.
         if (activePicker !== null) {
-            const sameSwatch = activePicker.index === index;
+            const isSameSwatch = activePicker.index === index;
             const stale = activePicker.input;
             activePicker = null;
             stale.remove();
-            if (sameSwatch) return;
+            if (isSameSwatch) return;
         }
 
-        const canvasRect = canvasEl.getBoundingClientRect();
+        const canvasRect = canvasElement.getBoundingClientRect();
         const box = swatch.getBoundingClientRect();
         // Scale between the SVG's user units and its rendered size (the canvas can scroll/zoom).
         const scale = box.width / geom.style.layout.legendSwatch;
@@ -946,22 +981,22 @@ export function createEditor(
             : effectiveCurveSwatchColor(geom.style, curve, index, geom.dark);
         input.value = /^#[0-9a-f]{6}$/i.test(seed) ? seed : '#000000';
         input.style.position = 'absolute';
-        input.style.left = `${Math.max(0, box.left - canvasRect.left + canvasEl.scrollLeft - (overlaySize - box.width) / 2)}px`;
-        input.style.top = `${Math.max(0, box.top - canvasRect.top + canvasEl.scrollTop - (overlaySize - box.height) / 2)}px`;
+        input.style.left = `${Math.max(0, box.left - canvasRect.left + canvasElement.scrollLeft - (overlaySize - box.width) / 2)}px`;
+        input.style.top = `${Math.max(0, box.top - canvasRect.top + canvasElement.scrollTop - (overlaySize - box.height) / 2)}px`;
         input.style.width = `${overlaySize}px`;
         input.style.height = `${overlaySize}px`;
-        canvasEl.appendChild(input);
+        canvasElement.append(input);
 
-        let done = false;
+        let isDone = false;
         const finish = (): void => {
-            if (done) return;
-            done = true;
-            canvasEl.removeEventListener('pointerdown', canvasGuard);
+            if (isDone) return;
+            isDone = true;
+            canvasElement.removeEventListener('pointerdown', canvasGuard);
             if (activePicker !== null && activePicker.input === input) activePicker = null;
             input.remove();
         };
         const commit = (): void => {
-            if (done) return;
+            if (isDone) return;
             finish();
             host.onCommit();
         };
@@ -979,7 +1014,7 @@ export function createEditor(
         });
         input.addEventListener('change', commit);
         input.addEventListener('blur', commit);
-        canvasEl.addEventListener('pointerdown', canvasGuard);
+        canvasElement.addEventListener('pointerdown', canvasGuard);
         activePicker = { input, index };
         input.click();
     }
@@ -1034,21 +1069,21 @@ export function createEditor(
         const applyPreview = (targetIndex: number): void => {
             if (targetIndex === currentTarget) return;
             currentTarget = targetIndex;
-            blocks.forEach((block, i) => {
-                if (i === index) return;
+            for (const [index_, block] of blocks.entries()) {
+                if (index_ === index) continue;
                 let shift = 0;
-                if (index < targetIndex && i > index && i <= targetIndex) shift = -1;
-                if (index > targetIndex && i >= targetIndex && i < index) shift = 1;
+                if (index < targetIndex && index_ > index && index_ <= targetIndex) shift = -1;
+                if (index > targetIndex && index_ >= targetIndex && index_ < index) shift = 1;
                 block.style.transform = shift === 0 ? '' : `translateY(${shift * shiftPx}px)`;
-            });
+            }
         };
 
         const resetPreview = (): void => {
             dragged.style.transform = '';
             dragged.classList.remove('dragging');
-            blocks.forEach((block) => {
+            for (const block of blocks) {
                 if (block !== dragged) block.style.transform = '';
-            });
+            }
             currentSvg.classList.remove('legend-dragging');
         };
 
@@ -1069,11 +1104,13 @@ export function createEditor(
                 const n = blocks.length;
                 const from = n - 1 - index;
                 const to = n - 1 - targetSlot;
-                if (reorderCurve(model(), from, to)) {
-                    // Keep selection glued to the same curve after the splice.
-                    selectedCurve = afterMove(selectedCurve, from, to);
-                    host.onCommit();
+                if (!reorderCurve(model(), from, to)) {
+                    return;
                 }
+
+                // Keep selection glued to the same curve after the splice.
+                selectedCurve = afterMove(selectedCurve, from, to);
+                host.onCommit();
             },
         });
         event.preventDefault();
@@ -1081,7 +1118,9 @@ export function createEditor(
 
     // --- Inline text editing -------------------------------------------------
 
-    /** Resolve a `data-edit-field` element to its current text and a writer for new text. */
+    /**
+    Resolve a `data-edit-field` element to its current text and a writer for new text.
+    */
     function fieldBinding(
         element: SVGElement
     ): { value: string; multiline: boolean; write: (next: string) => void } | null {
@@ -1089,19 +1128,20 @@ export function createEditor(
         if (field === null) return null;
         const m = model();
         switch (field) {
-            case 'title':
+            case 'title': {
                 return { value: m.title ?? '', multiline: false, write: (v) => (m.title = v) };
-            case 'yaxis':
+            }
+            case 'yaxis': {
                 return {
                     value: m.yAxisTitle ?? '',
                     multiline: false,
                     write: (v) => (m.yAxisTitle = v),
                 };
+            }
             case 'phase': {
                 const index = Number(element.getAttribute('data-phase-index'));
                 const phase = m.phases[index];
-                if (phase === undefined) return null;
-                return { value: phase.label, multiline: false, write: (v) => (phase.label = v) };
+                return phase === undefined ? null : { value: phase.label, multiline: false, write: (v) => (phase.label = v) };
             }
             case 'event': {
                 const index = Number(element.getAttribute('data-event-index'));
@@ -1121,8 +1161,7 @@ export function createEditor(
             case 'curve-label': {
                 const index = Number(element.getAttribute('data-curve-index'));
                 const curve = m.curves[index];
-                if (curve === undefined) return null;
-                return { value: curve.label, multiline: false, write: (v) => (curve.label = v) };
+                return curve === undefined ? null : { value: curve.label, multiline: false, write: (v) => (curve.label = v) };
             }
             case 'legend-block': {
                 const index = Number(element.getAttribute('data-curve-index'));
@@ -1139,8 +1178,9 @@ export function createEditor(
                     },
                 };
             }
-            default:
+            default: {
                 return null;
+            }
         }
     }
 
@@ -1156,7 +1196,7 @@ export function createEditor(
         multiline: boolean,
         write: (next: string) => void
     ): void {
-        const canvasRect = canvasEl.getBoundingClientRect();
+        const canvasRect = canvasElement.getBoundingClientRect();
         const elementRect = element.getBoundingClientRect();
         const input = (
             multiline ? document.createElement('textarea') : document.createElement('input')
@@ -1164,28 +1204,28 @@ export function createEditor(
         input.className = 'inline-editor' + (multiline ? ' multiline' : '');
         input.value = value;
         input.style.position = 'absolute';
-        input.style.left = `${Math.max(0, elementRect.left - canvasRect.left + canvasEl.scrollLeft - 4)}px`;
-        input.style.top = `${Math.max(0, elementRect.top - canvasRect.top + canvasEl.scrollTop - 4)}px`;
+        input.style.left = `${Math.max(0, elementRect.left - canvasRect.left + canvasElement.scrollLeft - 4)}px`;
+        input.style.top = `${Math.max(0, elementRect.top - canvasRect.top + canvasElement.scrollTop - 4)}px`;
         input.style.minWidth = `${Math.max(140, elementRect.width + 48)}px`;
         if (multiline) {
             input.style.height = `${Math.max(64, elementRect.height + 28)}px`;
         }
-        canvasEl.appendChild(input);
+        canvasElement.append(input);
         input.focus();
         if (!multiline) input.select();
 
-        let done = false;
+        let isDone = false;
         const commit = (): void => {
-            if (done) return;
-            done = true;
+            if (isDone) return;
+            isDone = true;
             write(input.value);
             activeInline = null;
             input.remove();
             host.onCommit();
         };
         const cancel = (): void => {
-            if (done) return;
-            done = true;
+            if (isDone) return;
+            isDone = true;
             activeInline = null;
             input.remove();
             render();
@@ -1222,13 +1262,13 @@ export function createEditor(
                 return;
             }
         }
-        if (selectedCurve !== null) {
-            if (removeCurve(m, selectedCurve)) {
-                selectedCurve = null;
-                selectedPoint = null;
-                host.onCommit();
-            }
+        if (selectedCurve === null || !removeCurve(m, selectedCurve)) {
+            return;
         }
+
+        selectedCurve = null;
+        selectedPoint = null;
+        host.onCommit();
     }
 
     function clearSelection(): void {
@@ -1241,7 +1281,7 @@ export function createEditor(
     function nudge(dx: number, dy: number): boolean {
         if (selectedPoint === null || selectedCurve === null) return false;
         const curve = model().curves[selectedCurve];
-        if (curve === undefined || !curve.points.includes(selectedPoint)) return false;
+        if (!curve?.points.includes(selectedPoint)) return false;
         setPoint(model(), selectedCurve, selectedPoint, selectedPoint.x + dx, selectedPoint.y + dy);
         host.onCommit();
         return true;

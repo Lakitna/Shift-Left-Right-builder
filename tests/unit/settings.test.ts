@@ -25,8 +25,8 @@ describe('REQ-12 PNG width validation', () => {
     });
 
     it('clampPngWidth falls back to the default for non-finite input', () => {
-        expect(clampPngWidth(Number.NaN)).toBe(PNG_DEFAULT_WIDTH);
-        expect(clampPngWidth(Number.POSITIVE_INFINITY)).toBe(PNG_DEFAULT_WIDTH);
+        expect(clampPngWidth(NaN)).toBe(PNG_DEFAULT_WIDTH);
+        expect(clampPngWidth(Infinity)).toBe(PNG_DEFAULT_WIDTH);
         expect(clampPngWidth(Number.NEGATIVE_INFINITY)).toBe(PNG_DEFAULT_WIDTH);
     });
 

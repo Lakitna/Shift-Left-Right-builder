@@ -19,10 +19,12 @@ export function getActiveStyle(): GraphStyle {
     return getStyle(activeId);
 }
 
-/** The stored style id, or null when absent/unknown. */
+/**
+The stored style id, or null when absent/unknown.
+*/
 export function readStoredStyleId(): string | null {
     try {
-        const stored = window.localStorage.getItem(STORAGE_KEY);
+        const stored = globalThis.localStorage.getItem(STORAGE_KEY);
         return isValidStyleId(stored) ? stored : null;
     } catch {
         return null;
@@ -39,7 +41,7 @@ export function setActiveStyle(id: string, persist = true): GraphStyle {
     applyChromeVars(style);
     if (persist) {
         try {
-            window.localStorage.setItem(STORAGE_KEY, activeId);
+            globalThis.localStorage.setItem(STORAGE_KEY, activeId);
         } catch {
             // Private mode / disabled storage: the selection still works for this session.
         }

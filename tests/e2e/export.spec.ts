@@ -36,14 +36,18 @@ async function downloadedText(download: Download): Promise<string> {
     return (await downloadedBytes(download)).toString('utf8');
 }
 
-/** The two numbers the PNG dialog promises, e.g. from "Exports at about 1500 × 875 px". */
+/**
+The two numbers the PNG dialog promises, e.g. from "Exports at about 1500 × 875 px".
+*/
 function parseSizeHint(text: string): { width: number; height: number } {
     const match = /(\d+)\s*×\s*(\d+)/.exec(text);
     if (match === null) throw new Error(`Could not read a size out of ${JSON.stringify(text)}`);
     return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-/** PNG dimensions straight from the IHDR chunk. */
+/**
+PNG dimensions straight from the IHDR chunk.
+*/
 function pngSize(bytes: Buffer): { width: number; height: number } {
     expect(bytes.subarray(1, 4).toString('ascii')).toBe('PNG');
     return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };

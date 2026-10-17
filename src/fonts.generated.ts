@@ -7,11 +7,15 @@ Sources: @fontsource packages (OFL licensed), latin subset, woff2.
 export interface FontFaceData {
     family: string;
     weight: number;
-    /** Static file served from dist/web/fonts/; the name embeds a content hash. */
+    /**
+    Static file served from dist/web/fonts/; the name embeds a content hash.
+    */
     url: string;
 }
 
-/** All bundled faces (~310 KB of woff2, served as cacheable static files). */
+/**
+All bundled faces (~310 KB of woff2, served as cacheable static files).
+*/
 export const FONT_FACES: FontFaceData[] = [
     { family: "Patrick Hand", weight: 400, url: 'fonts/patrick-hand-latin-400-ac5bc9033b.woff2' },
     { family: "IBM Plex Mono", weight: 400, url: 'fonts/ibm-plex-mono-latin-400-08949f728d.woff2' },

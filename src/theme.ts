@@ -12,24 +12,26 @@ export function isDarkMode(): boolean {
     return document.documentElement.dataset.theme === 'dark';
 }
 
-/** Apply the stored (or system) theme before the first render to avoid a flash of wrong colors. */
+/**
+Apply the stored (or system) theme before the first render to avoid a flash of wrong colors.
+*/
 export function initTheme(): void {
     let stored: string | null = null;
     try {
-        stored = window.localStorage.getItem(STORAGE_KEY);
+        stored = globalThis.localStorage.getItem(STORAGE_KEY);
     } catch {
         stored = null;
     }
-    const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches === true;
-    const dark = stored === 'dark' || (stored !== 'light' && systemDark);
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    const isSystemDark = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    const isDark = stored === 'dark' || (stored !== 'light' && isSystemDark);
+    document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
 }
 
 export function toggleTheme(): Theme {
     const next: Theme = isDarkMode() ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     try {
-        window.localStorage.setItem(STORAGE_KEY, next);
+        globalThis.localStorage.setItem(STORAGE_KEY, next);
     } catch {
         // Private mode / disabled storage: the toggle still works for this session.
     }

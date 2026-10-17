@@ -16,7 +16,9 @@ const ROOT = resolve(import.meta.dirname, '..');
 const OUT_DIR = resolve(ROOT, 'src/fonts');
 const OUT_FILE = resolve(ROOT, 'src/fonts.generated.ts');
 
-/** @type {{ pkg: string, family: string, weights: number[] }[]} */
+/**
+@type {{ pkg: string, family: string, weights: number[] }[]}
+*/
 const MANIFEST = [
     { pkg: 'patrick-hand', family: 'Patrick Hand', weights: [400] },
     { pkg: 'ibm-plex-mono', family: 'IBM Plex Mono', weights: [400] },

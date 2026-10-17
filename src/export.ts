@@ -14,10 +14,10 @@ function triggerDownload(objectUrl: string, filename: string): void {
     const anchor = document.createElement('a');
     anchor.href = objectUrl;
     anchor.download = filename;
-    document.body.appendChild(anchor);
+    document.body.append(anchor);
     anchor.click();
     anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+    globalThis.setTimeout(() => { URL.revokeObjectURL(objectUrl); }, 2000);
 }
 
 export interface SvgExportOptions {
@@ -30,13 +30,17 @@ export interface SvgExportOptions {
 export interface PngExportOptions {
     filename: string;
     dark: boolean;
-    /** Rasterization pixel ratio; 2 gives retina quality. */
+    /**
+    Rasterization pixel ratio; 2 gives retina quality.
+    */
     scale: number;
     transparent: boolean;
     includeLegend: boolean;
 }
 
-/** Standalone SVG document string for the model in the given color mode / background. */
+/**
+Standalone SVG document string for the model in the given color mode / background.
+*/
 export async function buildSvgString(
     model: GraphModel,
     options: { dark: boolean; transparent: boolean; includeLegend: boolean }
@@ -99,8 +103,8 @@ async function rasterizeSheet(
     const image = new Image();
     const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sheet.svgString);
     await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error('Could not rasterize the graph SVG'));
+        image.addEventListener('load', () => { resolve(); });
+        image.onerror = () => { reject(new Error('Could not rasterize the graph SVG')); };
         image.src = dataUrl;
     });
 
@@ -118,7 +122,7 @@ async function rasterizeSheet(
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const blob = await new Promise<Blob | null>((resolve) => { canvas.toBlob(resolve, 'image/png'); });
     if (blob === null) {
         throw new Error('Could not encode the graph as PNG');
     }
@@ -131,7 +135,9 @@ export async function exportPng(model: GraphModel, options: PngExportOptions): P
     triggerDownload(URL.createObjectURL(blob), options.filename);
 }
 
-/** Sheet size in pixels at scale 1 — layout only, no SVG build or rasterization. */
+/**
+Sheet size in pixels at scale 1 — layout only, no SVG build or rasterization.
+*/
 export function measurePngSheet(
     model: GraphModel,
     options: { dark: boolean; transparent: boolean; includeLegend: boolean }
@@ -145,7 +151,9 @@ export function measurePngSheet(
     return { width: geom.width, height: geom.height };
 }
 
-/** Small rasterized preview for the export dialog (never above scale 1). */
+/**
+Small rasterized preview for the export dialog (never above scale 1).
+*/
 export async function renderPngPreview(
     model: GraphModel,
     options: { dark: boolean; transparent: boolean; includeLegend: boolean },

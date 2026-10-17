@@ -12,13 +12,13 @@ describe('REQ-12 export filename normalisation', () => {
     });
 
     it('strips path separators and reserved characters', () => {
-        expect(normalizeFilename('a/b\\c:d*e?f"g<h>i|j', 'fallback.png', 'png')).toBe(
+        expect(normalizeFilename(String.raw`a/b\c:d*e?f"g<h>i|j`, 'fallback.png', 'png')).toBe(
             'abcdefghij.png'
         );
     });
 
     it('falls back when nothing usable is left', () => {
-        expect(normalizeFilename('   ', 'fallback.png', 'png')).toBe('fallback.png');
+        expect(normalizeFilename(' '.repeat(3), 'fallback.png', 'png')).toBe('fallback.png');
         expect(normalizeFilename('/', 'fallback.svg', 'svg')).toBe('fallback.svg');
     });
 

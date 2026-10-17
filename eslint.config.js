@@ -33,6 +33,14 @@ export default defineConfig(
     js.configs.recommended,
     unicorn.configs.recommended,
 
+    // JSDoc blocks are written with an asterisk prefix and shared indentation throughout this repo.
+    {
+        files: ['**/*.{js,ts}'],
+        rules: {
+            'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+        },
+    },
+
     // Every TypeScript file needs the TS parser before any preset can read it.
     {
         files: ['**/*.ts'],

@@ -68,7 +68,7 @@ test.describe('REQ-01 boot, default model and URL restore', () => {
         const detailedHash = await waitForHashChange(page, before);
 
         await page.evaluate(() => {
-            window.location.hash = '';
+            globalThis.location.hash = '';
         });
         // A hash change triggers a full model load + re-render, gated on font loading — allow for
         // that under load rather than the default assertion budget.
@@ -78,7 +78,7 @@ test.describe('REQ-01 boot, default model and URL restore', () => {
         await waitForHashContaining(page, '#p=');
 
         await page.evaluate((value) => {
-            window.location.hash = value;
+            globalThis.location.hash = value;
         }, detailedHash);
         await expect(page.locator('.phase-label')).toHaveCount(6, { timeout: RENDER_TIMEOUT_MS });
     });
@@ -99,7 +99,7 @@ test.describe('REQ-11 sharing via URL', () => {
         const hash = await currentHash(page);
         // The model travels deflated, so even this small model stays a short hash.
         expect(hash.startsWith('#p=')).toBe(true);
-        expect(hash.length).toBeLessThan(1_500);
+        expect(hash.length).toBeLessThan(1500);
     });
 
     test('copy link confirms the copy', async ({ page }) => {

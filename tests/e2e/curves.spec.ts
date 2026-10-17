@@ -13,7 +13,9 @@ import {
     toolbarCheck,
 } from './helpers';
 
-/** Schematic's first curve ("Shift-left") carries seven control points. */
+/**
+Schematic's first curve ("Shift-left") carries seven control points.
+*/
 const SHIFT_LEFT_POINTS = 7;
 
 const curveGroup = (index: number) => `#graph-container g.curves > g[data-curve-index="${index}"]`;

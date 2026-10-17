@@ -21,7 +21,9 @@ const CANVAS = '#graph-container';
 
 const PRESETS = ['Schematic', 'Detailed', 'Empty'] as const;
 
-/** Menu label paired with the public style id — the id is what travels in URLs and localStorage. */
+/**
+Menu label paired with the public style id — the id is what travels in URLs and localStorage.
+*/
 const STYLES = [
     { id: 'classic', name: 'Classic' },
     { id: 'draftsman', name: 'Draftsman' },

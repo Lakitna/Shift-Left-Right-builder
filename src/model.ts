@@ -17,16 +17,24 @@
  */
 
 export interface CurvePoint {
-    /** Horizontal position, 0..100 (% of the plot width). */
+    /**
+    Horizontal position, 0..100 (% of the plot width).
+    */
     x: number;
-    /** Vertical position, 0..100 (effort; 0 = baseline). */
+    /**
+    Vertical position, 0..100 (effort; 0 = baseline).
+    */
     y: number;
 }
 
 export interface Curve {
-    /** Shown inside the plot near the curve's peak and in the legend. */
+    /**
+    Shown inside the plot near the curve's peak and in the legend.
+    */
     label: string;
-    /** Fill/stroke color as #rrggbb. */
+    /**
+    Fill/stroke color as #rrggbb.
+    */
     color: string;
     /**
      * True once the user picks a color for this curve. Palette styles paint their own
@@ -34,18 +42,28 @@ export interface Curve {
      * the reference app's layer `colorCustom`). Omitted (false) in the URL wire format.
      */
     colorCustom?: boolean;
-    /** Free text shown in the legend below the graph. */
+    /**
+    Free text shown in the legend below the graph.
+    */
     notes: string;
-    /** Control points, kept sorted by ascending x. Between MIN_POINTS and MAX_POINTS entries. */
+    /**
+    Control points, kept sorted by ascending x. Between MIN_POINTS and MAX_POINTS entries.
+    */
     points: CurvePoint[];
-    /** Smooth Catmull-Rom spline through the points when true; straight polyline when false. */
+    /**
+    Smooth Catmull-Rom spline through the points when true; straight polyline when false.
+    */
     smooth: boolean;
-    /** Fill opacity for translucent overlap, 0..1. */
+    /**
+    Fill opacity for translucent overlap, 0..1.
+    */
     opacity: number;
 }
 
 export interface Phase {
-    /** X-axis label; the phase's position is its evenly-spaced index. */
+    /**
+    X-axis label; the phase's position is its evenly-spaced index.
+    */
     label: string;
 }
 
@@ -56,27 +74,45 @@ export interface Phase {
  * point. It is drawn as a vertical line through the plot with a label + note callout above it.
  */
 export interface GraphEvent {
-    /** Short label shown in the callout above the plot. */
+    /**
+    Short label shown in the callout above the plot.
+    */
     label: string;
-    /** Free-text description shown as a wrapped second line under the label. */
+    /**
+    Free-text description shown as a wrapped second line under the label.
+    */
     note: string;
-    /** Horizontal position, 0..100 (% of the plot width). */
+    /**
+    Horizontal position, 0..100 (% of the plot width).
+    */
     x: number;
 }
 
 export interface GraphModel {
     version: number;
-    /** Optional heading drawn above the graph. */
+    /**
+    Optional heading drawn above the graph.
+    */
     title?: string;
-    /** Y-axis caption, e.g. "Test volume". */
+    /**
+    Y-axis caption, e.g. "Test volume".
+    */
     yAxisTitle?: string;
-    /** Numeric scale + gridlines when true; qualitative axis when false. */
+    /**
+    Numeric scale + gridlines when true; qualitative axis when false.
+    */
     numericAxis: boolean;
-    /** X-axis phases, left to right. At least MIN_PHASES. */
+    /**
+    X-axis phases, left to right. At least MIN_PHASES.
+    */
     phases: Phase[];
-    /** Moments in time, kept sorted by ascending x. May be empty. */
+    /**
+    Moments in time, kept sorted by ascending x. May be empty.
+    */
     events: GraphEvent[];
-    /** The curves, drawn in order (later curves paint on top). */
+    /**
+    The curves, drawn in order (later curves paint on top).
+    */
     curves: Curve[];
 }
 
@@ -98,7 +134,9 @@ export const MIN_OPACITY = 0.05;
 export const MAX_OPACITY = 1;
 export const DEFAULT_OPACITY = 0.5;
 
-/** Colors assigned to newly added curves, cycled by curve index. */
+/**
+Colors assigned to newly added curves, cycled by curve index.
+*/
 export const PALETTE = [
     '#22c1d9', // cyan (shift-left)
     '#f24d8d', // pink (traditional)
@@ -116,16 +154,18 @@ export const PALETTE = [
 
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
-/** Clamp an arbitrary number into the 0..100 coordinate space (NaN/Infinity -> 0). */
+/**
+Clamp an arbitrary number into the 0..100 coordinate space (NaN/Infinity -> 0).
+*/
 export function clampCoord(value: number): number {
-    if (!Number.isFinite(value)) return MIN_COORD;
-    return Math.min(MAX_COORD, Math.max(MIN_COORD, Math.round(value)));
+    return Number.isFinite(value) ? Math.min(MAX_COORD, Math.max(MIN_COORD, Math.round(value))) : MIN_COORD;
 }
 
-/** Clamp an arbitrary number into the valid fill-opacity range. */
+/**
+Clamp an arbitrary number into the valid fill-opacity range.
+*/
 export function clampOpacity(value: number): number {
-    if (!Number.isFinite(value)) return DEFAULT_OPACITY;
-    return Math.min(MAX_OPACITY, Math.max(MIN_OPACITY, Math.round(value * 100) / 100));
+    return Number.isFinite(value) ? Math.min(MAX_OPACITY, Math.max(MIN_OPACITY, Math.round(value * 100) / 100)) : DEFAULT_OPACITY;
 }
 
 /**
@@ -147,7 +187,7 @@ export function cloneModel(source: GraphModel): GraphModel {
         curves: source.curves.map((curve) => ({
             label: curve.label,
             color: curve.color,
-            ...(curve.colorCustom === true ? { colorCustom: true } : {}),
+            ...((curve.colorCustom === true) && { colorCustom: true }),
             notes: curve.notes,
             smooth: curve.smooth,
             opacity: curve.opacity,
@@ -161,26 +201,20 @@ function record(input: unknown): Record<string, unknown> | null {
 }
 
 function parsePoint(input: unknown): CurvePoint | null {
-    const obj = record(input);
-    if (obj === null) return null;
-    const { x, y } = obj;
-    if (typeof x !== 'number' || typeof y !== 'number') return null;
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x: clampCoord(x), y: clampCoord(y) };
+    const object = record(input);
+    if (object === null) return null;
+    const { x, y } = object;
+    return typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && Number.isFinite(y) ? { x: clampCoord(x), y: clampCoord(y) } : null;
 }
 
 function parseCurve(input: unknown): Curve | null {
-    const obj = record(input);
-    if (obj === null) return null;
-    const { label, notes, color, smooth } = obj;
-    if (typeof label !== 'string' || typeof notes !== 'string') return null;
-    if (typeof color !== 'string' || !COLOR_PATTERN.test(color)) return null;
-    if (typeof smooth !== 'boolean') return null;
-    if (!Array.isArray(obj.points)) return null;
-    if (obj.points.length < MIN_POINTS || obj.points.length > MAX_POINTS) return null;
+    const object = record(input);
+    if (object === null) return null;
+    const { label, notes, color, smooth } = object;
+    if (typeof label !== 'string' || typeof notes !== 'string' || typeof color !== 'string' || !COLOR_PATTERN.test(color) || (typeof smooth !== 'boolean') || !Array.isArray(object.points) || object.points.length < MIN_POINTS || object.points.length > MAX_POINTS) return null;
 
     const points: CurvePoint[] = [];
-    for (const rawPoint of obj.points) {
+    for (const rawPoint of object.points) {
         const point = parsePoint(rawPoint);
         if (point === null) return null;
         points.push(point);
@@ -188,12 +222,12 @@ function parseCurve(input: unknown): Curve | null {
     // Keep the invariant that points are sorted by ascending x.
     points.sort((a, b) => a.x - b.x);
 
-    const opacity = typeof obj.opacity === 'number' ? clampOpacity(obj.opacity) : DEFAULT_OPACITY;
-    if (obj.colorCustom !== undefined && typeof obj.colorCustom !== 'boolean') return null;
+    const opacity = typeof object.opacity === 'number' ? clampOpacity(object.opacity) : DEFAULT_OPACITY;
+    if (object.colorCustom !== undefined && typeof object.colorCustom !== 'boolean') return null;
     return {
         label,
         color: color.toLowerCase(),
-        ...(obj.colorCustom === true ? { colorCustom: true } : {}),
+        ...((object.colorCustom === true) && { colorCustom: true }),
         notes,
         points,
         smooth,
@@ -202,19 +236,15 @@ function parseCurve(input: unknown): Curve | null {
 }
 
 function parsePhase(input: unknown): Phase | null {
-    const obj = record(input);
-    if (obj === null) return null;
-    if (typeof obj.label !== 'string') return null;
-    return { label: obj.label };
+    const object = record(input);
+    return (object === null) || (typeof object.label !== 'string') ? null : { label: object.label };
 }
 
 function parseEvent(input: unknown): GraphEvent | null {
-    const obj = record(input);
-    if (obj === null) return null;
-    const { label, note, x } = obj;
-    if (typeof label !== 'string' || typeof note !== 'string') return null;
-    if (typeof x !== 'number' || !Number.isFinite(x)) return null;
-    return { label, note, x: clampCoord(x) };
+    const object = record(input);
+    if (object === null) return null;
+    const { label, note, x } = object;
+    return typeof label === 'string' && typeof note === 'string' && typeof x === 'number' && Number.isFinite(x) ? { label, note, x: clampCoord(x) } : null;
 }
 
 /**
@@ -224,17 +254,11 @@ function parseEvent(input: unknown): GraphEvent | null {
  * payload is rejected rather than silently repaired.
  */
 export function parseModel(input: unknown): GraphModel | null {
-    const obj = record(input);
-    if (obj === null) return null;
+    const object = record(input);
+    if (object === null) return null;
 
-    const { title, yAxisTitle, numericAxis, phases, events, curves } = obj;
-    if (obj.version !== MODEL_VERSION) return null;
-    if (typeof title !== 'string' || typeof yAxisTitle !== 'string') return null;
-    if (typeof numericAxis !== 'boolean') return null;
-    if (!Array.isArray(phases) || !Array.isArray(events) || !Array.isArray(curves)) return null;
-    if (phases.length < MIN_PHASES || phases.length > MAX_PHASES) return null;
-    if (events.length < MIN_EVENTS || events.length > MAX_EVENTS) return null;
-    if (curves.length < MIN_CURVES || curves.length > MAX_CURVES) return null;
+    const { title, yAxisTitle, numericAxis, phases, events, curves } = object;
+    if ((object.version !== MODEL_VERSION) || typeof title !== 'string' || typeof yAxisTitle !== 'string' || (typeof numericAxis !== 'boolean') || !Array.isArray(phases) || !Array.isArray(events) || !Array.isArray(curves) || phases.length < MIN_PHASES || phases.length > MAX_PHASES || events.length < MIN_EVENTS || events.length > MAX_EVENTS || curves.length < MIN_CURVES || curves.length > MAX_CURVES) return null;
 
     const parsedPhases: Phase[] = [];
     for (const rawPhase of phases) {
@@ -260,8 +284,8 @@ export function parseModel(input: unknown): GraphModel | null {
 
     return {
         version: MODEL_VERSION,
-        title: title as string | undefined,
-        yAxisTitle: yAxisTitle as string | undefined,
+        title: title,
+        yAxisTitle: yAxisTitle,
         numericAxis,
         phases: parsedPhases,
         events: parsedEvents,
@@ -280,23 +304,27 @@ export function parseModel(input: unknown): GraphModel | null {
  */
 export function phasePositions(count: number): number[] {
     const positions: number[] = [];
-    for (let i = 0; i < count; i++) {
-        positions.push(Math.round(((i + 0.5) / count) * 100));
+    for (let index = 0; index < count; index++) {
+        positions.push(Math.round(((index + 0.5) / count) * 100));
     }
     return positions;
 }
 
-/** The phase tick x (0..100) nearest to `x`. */
+/**
+The phase tick x (0..100) nearest to `x`.
+*/
 export function nearestPhaseX(x: number, count: number): number {
     const positions = phasePositions(count);
     let best = positions[0];
     let bestDistance = Math.abs(x - best);
     for (const position of positions) {
         const distance = Math.abs(x - position);
-        if (distance < bestDistance) {
-            best = position;
-            bestDistance = distance;
+        if (!(distance < bestDistance)) {
+            continue;
         }
+
+        best = position;
+        bestDistance = distance;
     }
     return best;
 }
@@ -309,43 +337,51 @@ export function nearestPhaseX(x: number, count: number): number {
  */
 export function phaseBoundaries(count: number): number[] {
     const boundaries: number[] = [];
-    for (let i = 0; i <= count; i++) {
-        boundaries.push(Math.round((i / count) * 100));
+    for (let index = 0; index <= count; index++) {
+        boundaries.push(Math.round((index / count) * 100));
     }
     return boundaries;
 }
 
-/** The phase-boundary x (0..100) nearest to `x`. */
+/**
+The phase-boundary x (0..100) nearest to `x`.
+*/
 export function nearestBoundaryX(x: number, count: number): number {
     const boundaries = phaseBoundaries(count);
     let best = boundaries[0];
     let bestDistance = Math.abs(x - best);
     for (const boundary of boundaries) {
         const distance = Math.abs(x - boundary);
-        if (distance < bestDistance) {
-            best = boundary;
-            bestDistance = distance;
+        if (!(distance < bestDistance)) {
+            continue;
         }
+
+        best = boundary;
+        bestDistance = distance;
     }
     return best;
 }
 
 // --- Curve operations --------------------------------------------------------
 
-/** Keep the invariant that a curve's points are sorted by ascending x. */
+/**
+Keep the invariant that a curve's points are sorted by ascending x.
+*/
 function sortPoints(points: CurvePoint[]): void {
     points.sort((a, b) => a.x - b.x);
 }
 
-/** Linear y between the points bracketing `x` (points must be sorted by x). */
+/**
+Linear y between the points bracketing `x` (points must be sorted by x).
+*/
 function interpolateY(points: CurvePoint[], x: number): number {
     if (points.length === 0) return 0;
     if (x <= points[0].x) return points[0].y;
-    const last = points[points.length - 1];
+    const last = points.at(-1);
     if (x >= last.x) return last.y;
-    for (let i = 0; i < points.length - 1; i++) {
-        const a = points[i];
-        const b = points[i + 1];
+    for (let index = 0; index < points.length - 1; index++) {
+        const a = points[index];
+        const b = points[index + 1];
         if (x >= a.x && x <= b.x) {
             const span = b.x - a.x;
             if (span === 0) return a.y;
@@ -356,14 +392,16 @@ function interpolateY(points: CurvePoint[], x: number): number {
     return last.y;
 }
 
-/** A curve for position `index`, cycling the palette so it differs from its neighbors. */
+/**
+A curve for position `index`, cycling the palette so it differs from its neighbors.
+*/
 export function newCurve(model: GraphModel, index: number): Curve {
-    const prev = model.curves[index - 1]?.color;
+    const previous = model.curves[index - 1]?.color;
     const next = model.curves[index]?.color;
     let color = PALETTE[index % PALETTE.length];
     for (let offset = 0; offset < PALETTE.length; offset++) {
         const candidate = PALETTE[(index + offset) % PALETTE.length];
-        if (candidate !== prev && candidate !== next) {
+        if (candidate !== previous && candidate !== next) {
             color = candidate;
             break;
         }
@@ -392,7 +430,9 @@ export function canRemoveCurve(model: GraphModel): boolean {
     return model.curves.length > MIN_CURVES;
 }
 
-/** Append a new curve at the top of the stack. */
+/**
+Append a new curve at the top of the stack.
+*/
 export function addCurve(model: GraphModel): boolean {
     if (!canAddCurve(model)) return false;
     model.curves.push(newCurve(model, model.curves.length));
@@ -400,13 +440,14 @@ export function addCurve(model: GraphModel): boolean {
 }
 
 export function removeCurve(model: GraphModel, index: number): boolean {
-    if (!canRemoveCurve(model)) return false;
-    if (index < 0 || index >= model.curves.length) return false;
+    if (!canRemoveCurve(model) || index < 0 || index >= model.curves.length) return false;
     model.curves.splice(index, 1);
     return true;
 }
 
-/** Move the curve at `from` to index `to` (changes paint order). */
+/**
+Move the curve at `from` to index `to` (changes paint order).
+*/
 export function reorderCurve(model: GraphModel, from: number, to: number): boolean {
     if (from < 0 || from >= model.curves.length) return false;
     const target = Math.max(0, Math.min(model.curves.length - 1, to));
@@ -444,7 +485,7 @@ export function insertPoint(
     const curve = model.curves[curveIndex];
     if (curve === undefined || !canAddPoint(curve)) return false;
     const x = clampCoord(atX);
-    const y = atY === undefined ? clampCoord(interpolateY(curve.points, x)) : clampCoord(atY);
+    const y = clampCoord(atY === undefined ? interpolateY(curve.points, x) : atY);
     curve.points.push({ x, y });
     sortPoints(curve.points);
     return true;
@@ -452,8 +493,7 @@ export function insertPoint(
 
 export function removePoint(model: GraphModel, curveIndex: number, pointIndex: number): boolean {
     const curve = model.curves[curveIndex];
-    if (curve === undefined || !canRemovePoint(curve)) return false;
-    if (pointIndex < 0 || pointIndex >= curve.points.length) return false;
+    if (curve === undefined || !canRemovePoint(curve) || pointIndex < 0 || pointIndex >= curve.points.length) return false;
     curve.points.splice(pointIndex, 1);
     return true;
 }
@@ -470,7 +510,7 @@ export function setPoint(
     y: number
 ): boolean {
     const curve = model.curves[curveIndex];
-    if (curve === undefined || !curve.points.includes(point)) return false;
+    if (!curve?.points.includes(point)) return false;
     point.x = clampCoord(x);
     point.y = clampCoord(y);
     sortPoints(curve.points);
@@ -487,7 +527,9 @@ export function canRemovePhase(model: GraphModel): boolean {
     return model.phases.length > MIN_PHASES;
 }
 
-/** Append a phase at the right end of the axis. */
+/**
+Append a phase at the right end of the axis.
+*/
 export function addPhase(model: GraphModel): boolean {
     if (!canAddPhase(model)) return false;
     model.phases.push({ label: `Phase ${model.phases.length + 1}` });
@@ -495,8 +537,7 @@ export function addPhase(model: GraphModel): boolean {
 }
 
 export function removePhase(model: GraphModel, index: number): boolean {
-    if (!canRemovePhase(model)) return false;
-    if (index < 0 || index >= model.phases.length) return false;
+    if (!canRemovePhase(model) || index < 0 || index >= model.phases.length) return false;
     model.phases.splice(index, 1);
     return true;
 }
@@ -535,8 +576,7 @@ export function addEvent(model: GraphModel): GraphEvent | null {
 }
 
 export function removeEvent(model: GraphModel, index: number): boolean {
-    if (!canRemoveEvent(model)) return false;
-    if (index < 0 || index >= model.events.length) return false;
+    if (!canRemoveEvent(model) || index < 0 || index >= model.events.length) return false;
     model.events.splice(index, 1);
     return true;
 }

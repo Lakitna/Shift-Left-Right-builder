@@ -37,7 +37,9 @@ const STYLE_PARAM = 's';
 interface WireCurve {
     label: string;
     color: string;
-    /** Only present when true — the default (style palette / stored color) is omitted. */
+    /**
+    Only present when true — the default (style palette / stored color) is omitted.
+    */
     colorCustom?: true;
     notes?: string;
     smooth?: boolean;
@@ -60,7 +62,7 @@ function toWire(model: GraphModel): WireModel {
         version: MODEL_VERSION,
         title: model.title ?? '',
         yAxisTitle: model.yAxisTitle ?? '',
-        ...(model.numericAxis ? { numericAxis: true } : {}),
+        ...(model.numericAxis && { numericAxis: true }),
         phases: model.phases.map((phase) => phase.label),
         events: model.events.map((event): [string, string, number] => [
             event.label,
@@ -82,7 +84,9 @@ function toWire(model: GraphModel): WireModel {
     };
 }
 
-/** Expand the compact wire shape into the explicit object shape parseModel validates. */
+/**
+Expand the compact wire shape into the explicit object shape parseModel validates.
+*/
 function fromWire(wire: WireModel): unknown {
     return {
         version: wire.version,
@@ -94,7 +98,7 @@ function fromWire(wire: WireModel): unknown {
         curves: wire.curves.map((curve) => ({
             label: curve.label,
             color: curve.color,
-            ...(curve.colorCustom === true ? { colorCustom: true } : {}),
+            ...((curve.colorCustom === true) && { colorCustom: true }),
             notes: curve.notes ?? '',
             smooth: curve.smooth ?? true,
             opacity: curve.opacity ?? DEFAULT_OPACITY,
@@ -110,30 +114,36 @@ function fromWire(wire: WireModel): unknown {
 function toBinary(bytes: Uint8Array): string {
     let binary = '';
     const CHUNK = 8192;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    for (let index = 0; index < bytes.length; index += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + CHUNK));
     }
     return binary;
 }
 
-/** Raw bytes → URL-safe base64 (padding stripped). */
+/**
+Raw bytes → URL-safe base64 (padding stripped).
+*/
 function toBase64Url(bytes: Uint8Array): string {
     return btoa(toBinary(bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
-/** URL-safe base64 → raw bytes, re-padding before `atob`. */
+/**
+URL-safe base64 → raw bytes, re-padding before `atob`.
+*/
 function fromBase64Url(encoded: string): Uint8Array<ArrayBuffer> {
     let base64 = encoded.replaceAll('-', '+').replaceAll('_', '/');
     base64 += '='.repeat((4 - (base64.length % 4)) % 4);
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-        bytes[i] = binary.charCodeAt(i);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
     }
     return bytes;
 }
 
-/** Push bytes through a Compression/DecompressionStream and collect the output. */
+/**
+Push bytes through a Compression/DecompressionStream and collect the output.
+*/
 async function pipeBytes(
     bytes: Uint8Array<ArrayBuffer>,
     stream: CompressionStream | DecompressionStream
@@ -144,7 +154,9 @@ async function pipeBytes(
     return new Uint8Array(await new Response(stream.readable).arrayBuffer());
 }
 
-/** Encode a model as URL-safe base64 of the DEFLATE'd compact wire JSON (UTF-8 safe). */
+/**
+Encode a model as URL-safe base64 of the DEFLATE'd compact wire JSON (UTF-8 safe).
+*/
 export async function encodeModel(model: GraphModel): Promise<string> {
     const json = JSON.stringify(toWire(model));
     const deflated = await pipeBytes(
@@ -154,7 +166,9 @@ export async function encodeModel(model: GraphModel): Promise<string> {
     return toBase64Url(deflated);
 }
 
-/** Decode a base64url DEFLATE string back into a validated model, or null when invalid. */
+/**
+Decode a base64url DEFLATE string back into a validated model, or null when invalid.
+*/
 export async function decodeModel(encoded: string): Promise<GraphModel | null> {
     try {
         const inflated = await pipeBytes(
@@ -164,33 +178,33 @@ export async function decodeModel(encoded: string): Promise<GraphModel | null> {
         const parsed = JSON.parse(new TextDecoder().decode(inflated)) as {
             version?: unknown;
         } | null;
-        if (typeof parsed !== 'object' || parsed === null || parsed.version !== MODEL_VERSION) {
-            return null;
-        }
-        return parseModel(fromWire(parsed as WireModel));
+        return typeof parsed !== 'object' || parsed === null || parsed.version !== MODEL_VERSION ? null : parseModel(fromWire(parsed as WireModel));
     } catch {
         return null;
     }
 }
 
 export interface HashReadResult {
-    /** The decoded model, or null when absent/invalid. */
+    /**
+    The decoded model, or null when absent/invalid.
+    */
     model: GraphModel | null;
-    /** Whether the hash contained model data at all (even if invalid). */
+    /**
+    Whether the hash contained model data at all (even if invalid).
+    */
     present: boolean;
-    /** The shared style id, or null when absent/unknown (the viewer's own preference applies). */
+    /**
+    The shared style id, or null when absent/unknown (the viewer's own preference applies).
+    */
     styleId: string | null;
 }
 
 export async function readHash(): Promise<HashReadResult> {
-    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const styleParam = params.get(STYLE_PARAM);
-    const styleId = styleParam !== null && isValidStyleId(styleParam) ? styleParam : null;
-    const value = params.get(HASH_PARAM);
-    if (value === null || value === '') {
-        return { model: null, present: false, styleId };
-    }
-    return { model: await decodeModel(value), present: true, styleId };
+    const parameters = new URLSearchParams(globalThis.location.hash.replace(/^#/, ''));
+    const styleParameter = parameters.get(STYLE_PARAM);
+    const styleId = styleParameter !== null && isValidStyleId(styleParameter) ? styleParameter : null;
+    const value = parameters.get(HASH_PARAM);
+    return value === null || value === '' ? { model: null, present: false, styleId } : { model: await decodeModel(value), present: true, styleId };
 }
 
 /**
@@ -200,8 +214,8 @@ export async function readHash(): Promise<HashReadResult> {
  */
 export async function writeStateToHash(model: GraphModel, styleId: string): Promise<void> {
     const encoded = await encodeModel(model);
-    const params = new URLSearchParams();
-    params.set(HASH_PARAM, encoded);
-    if (styleId !== DEFAULT_STYLE_ID) params.set(STYLE_PARAM, styleId);
-    window.history.replaceState(null, '', `#${params.toString()}`);
+    const parameters = new URLSearchParams();
+    parameters.set(HASH_PARAM, encoded);
+    if (styleId !== DEFAULT_STYLE_ID) parameters.set(STYLE_PARAM, styleId);
+    globalThis.history.replaceState(null, '', `#${parameters.toString()}`);
 }

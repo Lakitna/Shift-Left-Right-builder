@@ -10,10 +10,10 @@ import type { GraphStyle } from './styles/types';
  * style's real typefaces, offline and untainted.
  */
 
-function faceRule(family: string, weight: number, src: string): string {
+function faceRule(family: string, weight: number, source: string): string {
     return (
         `@font-face { font-family: '${family}'; font-style: normal; font-weight: ${weight}; ` +
-        `src: url(${src}) format('woff2'); }`
+        `src: url(${source}) format('woff2'); }`
     );
 }
 
@@ -30,11 +30,11 @@ const injectedFaces = new Set<string>();
  * canvas measurement would silently use the fallback stack.
  */
 export function ensureFontFaces(keys: readonly (readonly [string, number])[]): void {
-    let element = document.getElementById('bundled-fonts') as HTMLStyleElement | null;
+    let element = document.querySelector('#bundled-fonts') as HTMLStyleElement | null;
     if (element === null) {
         element = document.createElement('style');
         element.id = 'bundled-fonts';
-        document.head.appendChild(element);
+        document.head.append(element);
     }
     for (const [family, weight] of keys) {
         const face = findFace(family, weight);
@@ -56,9 +56,9 @@ const dataUriCache = new Map<string, Promise<string>>();
 
 function bytesToBase64(bytes: Uint8Array): string {
     let binary = '';
-    const chunk = 0x8000; // keep String.fromCharCode's argument count safe
-    for (let i = 0; i < bytes.length; i += chunk) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    const chunk = 0x80_00; // keep String.fromCharCode's argument count safe
+    for (let index = 0; index < bytes.length; index += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
     }
     return btoa(binary);
 }
@@ -108,7 +108,7 @@ export async function loadStyleFonts(style: GraphStyle): Promise<void> {
     await Promise.all(
         style.typography.fonts.map(
             ([family, weight]) =>
-                document.fonts.load(`${weight} 16px "${family}"`, sample).catch(() => undefined) // offline/failed: fallback stack still renders
+                document.fonts.load(`${weight} 16px "${family}"`, sample).catch(() => {}) // offline/failed: fallback stack still renders
         )
     );
 }

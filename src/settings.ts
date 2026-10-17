@@ -20,13 +20,12 @@ export const PNG_MAX_WIDTH = 8000;
 export const PNG_DEFAULT_WIDTH = 1500;
 
 export function clampPngWidth(value: number): number {
-    if (!Number.isFinite(value)) return PNG_DEFAULT_WIDTH;
-    return Math.min(PNG_MAX_WIDTH, Math.max(PNG_MIN_WIDTH, Math.round(value)));
+    return Number.isFinite(value) ? Math.min(PNG_MAX_WIDTH, Math.max(PNG_MIN_WIDTH, Math.round(value))) : PNG_DEFAULT_WIDTH;
 }
 
 function readJson(key: string): Record<string, unknown> | null {
     try {
-        const raw = window.localStorage.getItem(key);
+        const raw = globalThis.localStorage.getItem(key);
         if (raw === null) return null;
         const parsed = JSON.parse(raw) as unknown;
         return typeof parsed === 'object' && parsed !== null
@@ -39,7 +38,7 @@ function readJson(key: string): Record<string, unknown> | null {
 
 function writeJson(key: string, value: unknown): void {
     try {
-        window.localStorage.setItem(key, JSON.stringify(value));
+        globalThis.localStorage.setItem(key, JSON.stringify(value));
     } catch {
         // Private mode or quota — the dialog still works, just forgetful.
     }
@@ -57,7 +56,9 @@ function themeOr(stored: unknown, fallback: 'light' | 'dark'): 'light' | 'dark' 
     return stored === 'dark' || stored === 'light' ? stored : fallback;
 }
 
-/** A localStorage-backed settings object, validated field-by-field against fresh defaults. */
+/**
+A localStorage-backed settings object, validated field-by-field against fresh defaults.
+*/
 export interface SettingsStore<T> {
     read(): T;
     write(settings: T): void;
@@ -72,8 +73,7 @@ function createStore<T extends ExportSettingsBase>(
         read(): T {
             const fallback = defaults();
             const stored = readJson(key);
-            if (stored === null) return fallback;
-            return { ...fallback, ...validate(stored, fallback) };
+            return stored === null ? fallback : { ...fallback, ...validate(stored, fallback) };
         },
         write(settings: T): void {
             writeJson(key, settings);
@@ -107,8 +107,8 @@ export function createPngSettingsStore(
     return createStore(key, defaults, (stored, fallback) => {
         const base = validateBase(stored, fallback);
         const width = stored.width;
-        const validWidth =
+        const isValidWidth =
             typeof width === 'number' && width >= PNG_MIN_WIDTH && width <= PNG_MAX_WIDTH;
-        return { ...base, width: validWidth ? clampPngWidth(width) : fallback.width };
+        return { ...base, width: isValidWidth ? clampPngWidth(width) : fallback.width };
     });
 }

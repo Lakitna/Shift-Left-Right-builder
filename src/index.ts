@@ -26,7 +26,7 @@ import { ensureFontFaces, loadStyleFonts } from './fonts';
 import { DEFAULT_STYLE_ID, STYLES } from './styles';
 import { validateAllStyles } from './styles/validate';
 import {
-    applyChromeVars,
+    applyChromeVars as applyChromeVariables,
     getActiveStyle,
     getActiveStyleId,
     readStoredStyleId,
@@ -50,7 +50,7 @@ const INVALID_HASH_MESSAGE =
 // --- DOM ---------------------------------------------------------------------
 
 const canvas = mustFind<HTMLElement>('graph-container');
-const toolbarEl = mustFind<HTMLElement>('editor-toolbar');
+const toolbarElement = mustFind<HTMLElement>('editor-toolbar');
 const warningBanner = mustFind<HTMLElement>('warning');
 const copyButton = mustFind<HTMLButtonElement>('btn-copy-link');
 const shareButton = mustFind<HTMLButtonElement>('btn-share');
@@ -72,7 +72,7 @@ const history = new History();
 
 // --- Editor ------------------------------------------------------------------
 
-const editor: GraphEditor = createEditor(toolbarEl, canvas, {
+const editor: GraphEditor = createEditor(toolbarElement, canvas, {
     getModel: () => model,
     replaceModel: (next) => {
         model = next;
@@ -83,19 +83,21 @@ const editor: GraphEditor = createEditor(toolbarEl, canvas, {
         history.push(model);
         render();
     },
-    onLive: () => syncUrl(),
-    undo: () => applyHistoryStep(-1),
-    redo: () => applyHistoryStep(1),
+    onLive: () => { syncUrl(); },
+    undo: () => { applyHistoryStep(-1); },
+    redo: () => { applyHistoryStep(1); },
     canUndo: () => history.canUndo(),
     canRedo: () => history.canRedo(),
 });
 
 function applyHistoryStep(offset: -1 | 1): void {
     const restored = history.step(offset);
-    if (restored !== null) {
-        model = restored;
-        render();
+    if (restored === null) {
+        return;
     }
+
+    model = restored;
+    render();
 }
 
 function showWarning(message: string): void {
@@ -109,22 +111,28 @@ function showWarning(message: string): void {
 let urlTimer: number | undefined;
 
 function cancelUrlSync(): void {
-    if (urlTimer !== undefined) {
-        window.clearTimeout(urlTimer);
-        urlTimer = undefined;
+    if (urlTimer === undefined) {
+        return;
     }
+
+    globalThis.clearTimeout(urlTimer);
+    urlTimer = undefined;
 }
 
-/** Debounced hash update (used during live drags). */
+/**
+Debounced hash update (used during live drags).
+*/
 function syncUrl(): void {
     cancelUrlSync();
-    urlTimer = window.setTimeout(() => {
+    urlTimer = globalThis.setTimeout(() => {
         urlTimer = undefined;
         void writeStateToHash(model, getActiveStyleId());
     }, URL_SYNC_DELAY_MS);
 }
 
-/** Immediate hash update; resolves once the URL carries the current model. */
+/**
+Immediate hash update; resolves once the URL carries the current model.
+*/
 async function syncUrlNow(): Promise<void> {
     cancelUrlSync();
     await writeStateToHash(model, getActiveStyleId());
@@ -140,25 +148,25 @@ function render(): void {
 }
 
 function updateThemeButton(): void {
-    const dark = isDarkMode();
-    themeButton.textContent = dark ? '☀️' : '🌙';
-    themeButton.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    const isDark = isDarkMode();
+    themeButton.textContent = isDark ? '☀️' : '🌙';
+    themeButton.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
 }
 
 themeButton.addEventListener('click', () => {
     toggleTheme();
     // The active style carries its own dark chrome tokens — rewrite them for the new mode.
-    applyChromeVars();
+    applyChromeVariables();
     updateThemeButton();
     editor.render();
 });
 
 // --- Keyboard ----------------------------------------------------------------
 
-window.addEventListener('keydown', (event) => {
+globalThis.addEventListener('keydown', (event) => {
     if (pngDialog.dialog.open || svgDialog.dialog.open) return;
     const target = event.target as HTMLElement | null;
-    const typing =
+    const isTyping =
         target !== null &&
         (target.tagName === 'INPUT' ||
             target.tagName === 'TEXTAREA' ||
@@ -175,7 +183,7 @@ window.addEventListener('keydown', (event) => {
         applyHistoryStep(1);
         return;
     }
-    if (typing) return;
+    if (isTyping) return;
     const arrowDelta: Record<string, [number, number]> = {
         ArrowLeft: [-1, 0],
         ArrowRight: [1, 0],
@@ -194,10 +202,10 @@ window.addEventListener('keydown', (event) => {
     } else if (event.key === 'Escape') {
         if (!styleMenu.hidden) {
             setStyleMenuOpen(false);
-        } else if (!shareMenu.hidden) {
-            setShareMenuOpen(false);
-        } else {
+        } else if (shareMenu.hidden) {
             editor.clearSelection();
+        } else {
+            setShareMenuOpen(false);
         }
     }
 });
@@ -216,19 +224,19 @@ function setStyleMenuOpen(open: boolean): void {
  */
 function renderStyleMenu(): void {
     styleMenu.textContent = '';
-    const dark = isDarkMode();
+    const isDark = isDarkMode();
     for (const style of STYLES) {
         const button = document.createElement('button');
         button.type = 'button';
         if (style.id === getActiveStyleId()) button.classList.add('active');
         const swatches = document.createElement('span');
         swatches.className = 'style-swatches';
-        const palette = dark ? style.curves.palette.dark : style.curves.palette.light;
+        const palette = isDark ? style.curves.palette.dark : style.curves.palette.light;
         for (const color of palette.slice(0, 4)) {
             const swatch = document.createElement('span');
             swatch.className = 'style-swatch';
             swatch.style.background = color;
-            swatches.appendChild(swatch);
+            swatches.append(swatch);
         }
         const name = document.createElement('span');
         name.textContent = style.name;
@@ -239,16 +247,16 @@ function renderStyleMenu(): void {
             render();
             // A second repaint once the new style's fonts resolve: textWidth() measures with
             // canvas metrics, so wrapping and chip sizing change with the real typeface.
-            void loadStyleFonts(applied).then(() => render());
+            void loadStyleFonts(applied).then(() => { render(); });
         });
-        styleMenu.appendChild(button);
+        styleMenu.append(button);
     }
     styleButton.textContent = `Style: ${getActiveStyle().name} ▾`;
 }
 
 styleButton.addEventListener('click', () => {
     // Open when hidden, close when visible (hidden === open-state inverted).
-    setStyleMenuOpen(styleMenu.hidden === true);
+    setStyleMenuOpen(styleMenu.hidden);
 });
 
 // --- Share menu --------------------------------------------------------------
@@ -260,21 +268,21 @@ function setShareMenuOpen(open: boolean): void {
 
 shareButton.addEventListener('click', () => {
     // Open when hidden, close when visible (hidden === open-state inverted).
-    setShareMenuOpen(shareMenu.hidden === true);
+    setShareMenuOpen(shareMenu.hidden);
 });
 
 document.addEventListener('pointerdown', (event) => {
     const target = event.target;
-    const inside = target instanceof Element && target.closest('.share-wrap') !== null;
-    if (!shareMenu.hidden && !inside) setShareMenuOpen(false);
-    const insideStyle = target instanceof Element && target.closest('.style-wrap') !== null;
-    if (!styleMenu.hidden && !insideStyle) setStyleMenuOpen(false);
+    const isInside = target instanceof Element && target.closest('.share-wrap') !== null;
+    if (!shareMenu.hidden && !isInside) setShareMenuOpen(false);
+    const isInsideStyle = target instanceof Element && target.closest('.style-wrap') !== null;
+    if (!styleMenu.hidden && !isInsideStyle) setStyleMenuOpen(false);
 });
 
 async function copyLink(): Promise<void> {
     await syncUrlNow();
     try {
-        await navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(globalThis.location.href);
         flashButton(copyButton, 'Copied!');
     } catch {
         flashButton(copyButton, 'Copy failed');
@@ -282,7 +290,7 @@ async function copyLink(): Promise<void> {
 }
 
 copyButton.addEventListener('click', () => {
-    void copyLink().then(() => setShareMenuOpen(false));
+    void copyLink().then(() => { setShareMenuOpen(false); });
 });
 
 // --- Export dialogs ----------------------------------------------------------
@@ -326,7 +334,7 @@ const pngPreview = createExportDialog<PngSettings>(pngDialog, {
     extension: 'png',
     fallbackFilename: 'shift-left-right.png',
     loadSettings: () => pngStore.read(),
-    saveSettings: (settings) => pngStore.write(settings),
+    saveSettings: (settings) => { pngStore.write(settings); },
     readCommon: (current, common) => ({
         ...current,
         ...common,
@@ -350,7 +358,9 @@ const pngPreview = createExportDialog<PngSettings>(pngDialog, {
     },
 });
 
-/** Debounced rasterized preview; the refresher drops out-of-order and post-close results. */
+/**
+Debounced rasterized preview; the refresher drops out-of-order and post-close results.
+*/
 const pngRefresher = createPreviewRefresher(
     pngPreview,
     () =>
@@ -382,7 +392,7 @@ const svgPreview = createExportDialog(svgDialog, {
     extension: 'svg',
     fallbackFilename: 'shift-left-right.svg',
     loadSettings: () => svgStore.read(),
-    saveSettings: (settings) => svgStore.write(settings),
+    saveSettings: (settings) => { svgStore.write(settings); },
     readCommon: (current, common) => ({ ...current, ...common }),
     onOptionsChanged: refreshSvgPreview,
     onDownload: (settings) => {
@@ -407,7 +417,7 @@ const svgRefresher = createPreviewRefresher(
         });
         return new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     },
-    () => svgPreview.hidePreview()
+    () => { svgPreview.hidePreview(); }
 );
 
 function refreshSvgPreview(): void {
@@ -441,12 +451,12 @@ async function loadFromHash(): Promise<void> {
     render();
 }
 
-window.addEventListener('hashchange', () => void loadFromHash());
+globalThis.addEventListener('hashchange', () => void loadFromHash());
 
 void loadFromHash();
 
 // Dev hook: `?validate-styles` logs every style's WCAG contrast issues.
-if (window.location.search.includes('validate-styles')) {
+if (globalThis.location.search.includes('validate-styles')) {
     const issues = validateAllStyles();
     if (issues.length === 0) {
         console.log('[styles] all checks passed');

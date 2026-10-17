@@ -55,7 +55,7 @@ test.describe('REQ-07 events (moments in time)', () => {
                 .sort((a, b) => a - b);
             if (xs.length < 2) return xs;
             const step = xs[1] - xs[0];
-            return [xs[0] - step, ...xs, xs[xs.length - 1] + step];
+            return [xs[0] - step, ...xs, xs.at(-1) + step];
         });
         expect(boundaries.length).toBeGreaterThan(0);
 

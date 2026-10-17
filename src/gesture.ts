@@ -12,12 +12,18 @@
  */
 
 export interface GestureState {
-    /** Total pointer delta from the gesture start, in client px. */
+    /**
+    Total pointer delta from the gesture start, in client px.
+    */
     dx: number;
     dy: number;
-    /** True once the pointer has travelled past the drag threshold. */
+    /**
+    True once the pointer has travelled past the drag threshold.
+    */
     moved: boolean;
-    /** The event that produced this state (pointermove, pointerup, or pointercancel). */
+    /**
+    The event that produced this state (pointermove, pointerup, or pointercancel).
+    */
     event: PointerEvent;
 }
 
@@ -27,21 +33,25 @@ export interface GestureOptions {
      * means the first pointermove already drags.
      */
     threshold?: number;
-    /** Called for each move once the gesture is dragging. */
+    /**
+    Called for each move once the gesture is dragging.
+    */
     onMove?(state: GestureState): void;
-    /** Called exactly once on release or cancel, after the listeners are removed. */
+    /**
+    Called exactly once on release or cancel, after the listeners are removed.
+    */
     onEnd(state: GestureState): void;
 }
 
 export function startGesture(down: PointerEvent, options: GestureOptions): void {
     const threshold = options.threshold ?? 0;
-    let moved = false;
+    let isMoved = false;
 
     const state = (event: PointerEvent): GestureState => {
         const dx = event.clientX - down.clientX;
         const dy = event.clientY - down.clientY;
-        if (!moved && Math.hypot(dx, dy) >= threshold) moved = true;
-        return { dx, dy, moved, event };
+        if (!isMoved && Math.hypot(dx, dy) >= threshold) isMoved = true;
+        return { dx, dy, moved: isMoved, event };
     };
 
     const onPointerMove = (event: PointerEvent): void => {
@@ -50,13 +60,13 @@ export function startGesture(down: PointerEvent, options: GestureOptions): void 
     };
 
     const finish = (event: PointerEvent): void => {
-        window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', finish);
-        window.removeEventListener('pointercancel', finish);
+        globalThis.removeEventListener('pointermove', onPointerMove);
+        globalThis.removeEventListener('pointerup', finish);
+        globalThis.removeEventListener('pointercancel', finish);
         options.onEnd(state(event));
     };
 
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', finish);
-    window.addEventListener('pointercancel', finish);
+    globalThis.addEventListener('pointermove', onPointerMove);
+    globalThis.addEventListener('pointerup', finish);
+    globalThis.addEventListener('pointercancel', finish);
 }

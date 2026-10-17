@@ -42,7 +42,9 @@ export function collectDialogElements(prefix: string): DialogElements {
     };
 }
 
-/** The controls every export dialog has, after normalization/validation. */
+/**
+The controls every export dialog has, after normalization/validation.
+*/
 export interface CommonExportValues {
     filename: string;
     transparent: boolean;
@@ -53,22 +55,34 @@ export interface CommonExportValues {
 export interface ExportDialogOptions<T extends CommonExportValues> {
     extension: 'png' | 'svg';
     fallbackFilename: string;
-    /** Read the persisted settings shown when the dialog opens. */
+    /**
+    Read the persisted settings shown when the dialog opens.
+    */
     loadSettings(): T;
-    /** Persist what the user chose on download. */
+    /**
+    Persist what the user chose on download.
+    */
     saveSettings(settings: T): void;
-    /** Merge the common control values into the last-known settings (adds format-specific fields). */
+    /**
+    Merge the common control values into the last-known settings (adds format-specific fields).
+    */
     readCommon(current: T, common: CommonExportValues): T;
-    /** Called whenever a visual option changes (preview should refresh). */
+    /**
+    Called whenever a visual option changes (preview should refresh).
+    */
     onOptionsChanged(): void;
-    /** Called with the saved settings when Download is pressed. */
+    /**
+    Called with the saved settings when Download is pressed.
+    */
     onDownload(settings: T): void;
-    /** Optional hook to populate format-specific controls (e.g. the PNG width field). */
+    /**
+    Optional hook to populate format-specific controls (e.g. the PNG width field).
+    */
     applyExtraSettings?(settings: T): void;
 }
 
 export function createExportDialog<T extends CommonExportValues>(
-    el: DialogElements,
+    element: DialogElements,
     options: ExportDialogOptions<T>
 ): {
     show(): void;
@@ -78,61 +92,63 @@ export function createExportDialog<T extends CommonExportValues>(
 } {
     let current = options.loadSettings();
 
-    el.cancelButton.addEventListener('click', () => el.dialog.close());
-    closeOnBackdrop(el.dialog);
+    element.cancelButton.addEventListener('click', () => { element.dialog.close(); });
+    closeOnBackdrop(element.dialog);
     for (const control of [
-        el.transparentInput,
-        el.legendInput,
-        el.themeLightRadio,
-        el.themeDarkRadio,
+        element.transparentInput,
+        element.legendInput,
+        element.themeLightRadio,
+        element.themeDarkRadio,
     ]) {
-        control.addEventListener('change', () => options.onOptionsChanged());
+        control.addEventListener('change', () => { options.onOptionsChanged(); });
     }
-    el.downloadButton.addEventListener('click', () => {
+    element.downloadButton.addEventListener('click', () => {
         current = options.readCommon(current, {
             filename: normalizeFilename(
-                el.filenameInput.value,
+                element.filenameInput.value,
                 options.fallbackFilename,
                 options.extension
             ),
-            transparent: el.transparentInput.checked,
-            includeLegend: el.legendInput.checked,
-            theme: el.themeDarkRadio.checked ? 'dark' : 'light',
+            transparent: element.transparentInput.checked,
+            includeLegend: element.legendInput.checked,
+            theme: element.themeDarkRadio.checked ? 'dark' : 'light',
         });
         options.saveSettings(current);
-        el.dialog.close();
+        element.dialog.close();
         options.onDownload(current);
     });
 
     return {
         show() {
             const settings = options.loadSettings();
-            el.filenameInput.value = settings.filename;
-            el.transparentInput.checked = settings.transparent;
-            el.legendInput.checked = settings.includeLegend;
-            (settings.theme === 'dark' ? el.themeDarkRadio : el.themeLightRadio).checked = true;
+            element.filenameInput.value = settings.filename;
+            element.transparentInput.checked = settings.transparent;
+            element.legendInput.checked = settings.includeLegend;
+            (settings.theme === 'dark' ? element.themeDarkRadio : element.themeLightRadio).checked = true;
             if (options.applyExtraSettings) options.applyExtraSettings(settings);
-            el.dialog.showModal();
-            el.filenameInput.focus();
-            el.filenameInput.select();
+            element.dialog.showModal();
+            element.filenameInput.focus();
+            element.filenameInput.select();
             options.onOptionsChanged();
         },
-        isOpen: () => el.dialog.open,
+        isOpen: () => element.dialog.open,
         setPreviewUrl(url: string) {
-            if (el.previewImg.dataset.url !== undefined) {
-                URL.revokeObjectURL(el.previewImg.dataset.url);
+            if (element.previewImg.dataset.url !== undefined) {
+                URL.revokeObjectURL(element.previewImg.dataset.url);
             }
-            el.previewImg.dataset.url = url;
-            el.previewImg.src = url;
-            el.previewImg.hidden = false;
+            element.previewImg.dataset.url = url;
+            element.previewImg.src = url;
+            element.previewImg.hidden = false;
         },
         hidePreview() {
-            el.previewImg.hidden = true;
+            element.previewImg.hidden = true;
         },
     };
 }
 
-/** The preview half of an export dialog, as needed by the refresher. */
+/**
+The preview half of an export dialog, as needed by the refresher.
+*/
 export interface PreviewTarget {
     isOpen(): boolean;
     setPreviewUrl(url: string): void;
@@ -170,8 +186,8 @@ export function createPreviewRefresher(
                 void run();
                 return;
             }
-            window.clearTimeout(timer);
-            timer = window.setTimeout(() => void run(), delayMs);
+            globalThis.clearTimeout(timer);
+            timer = globalThis.setTimeout(() => void run(), delayMs);
         },
     };
 }

@@ -11,7 +11,9 @@ export class History {
     private snapshots: string[] = [];
     private index = -1;
 
-    /** Record the current model as a new state, dropping any redo tail. No-op if unchanged. */
+    /**
+    Record the current model as a new state, dropping any redo tail. No-op if unchanged.
+    */
     push(model: GraphModel): void {
         const snapshot = JSON.stringify(model);
         if (this.snapshots[this.index] === snapshot) return;
@@ -29,7 +31,9 @@ export class History {
         return this.index < this.snapshots.length - 1;
     }
 
-    /** Step back/forward and return the restored model, or null when at a boundary. */
+    /**
+    Step back/forward and return the restored model, or null when at a boundary.
+    */
     step(offset: -1 | 1): GraphModel | null {
         const target = this.index + offset;
         if (target < 0 || target >= this.snapshots.length) return null;
@@ -39,7 +43,9 @@ export class History {
         return parsed;
     }
 
-    /** Start over from a single initial state (e.g. after loading a model from the URL). */
+    /**
+    Start over from a single initial state (e.g. after loading a model from the URL).
+    */
     reset(model: GraphModel): void {
         this.snapshots = [JSON.stringify(model)];
         this.index = 0;

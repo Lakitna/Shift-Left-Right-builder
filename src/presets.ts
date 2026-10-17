@@ -7,7 +7,9 @@
 
 import { MODEL_VERSION, PALETTE, type GraphModel } from './model';
 
-/** A named, complete model applied in one step. */
+/**
+A named, complete model applied in one step.
+*/
 export interface GraphPreset {
     name: string;
     data: GraphModel;

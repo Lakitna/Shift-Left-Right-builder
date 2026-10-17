@@ -12,7 +12,7 @@ import type { GraphStyle } from './types';
 import { unicornStyle } from './unicorn';
 
 export type { GraphStyle } from './types';
-export { classicStyle };
+
 
 export const DEFAULT_STYLE_ID = 'classic';
 
@@ -30,7 +30,11 @@ export function isValidStyleId(id: string | null | undefined): id is string {
     return typeof id === 'string' && STYLES.some((style) => style.id === id);
 }
 
-/** Resolve a style by id, falling back to classic for unknown/absent ids (forward-compat). */
+/**
+Resolve a style by id, falling back to classic for unknown/absent ids (forward-compat).
+*/
 export function getStyle(id: string | null | undefined): GraphStyle {
     return STYLES.find((style) => style.id === id) ?? classicStyle;
 }
+
+export {classicStyle} from './classic';

@@ -1,7 +1,7 @@
 /**
- * Minimal zero-dependency static file server for the built web app (dist/web).
- * Usage: node scripts/serve-web.mjs [port]
- */
+Minimal zero-dependency static file server for the built web app (dist/web).
+Usage: node scripts/serve-web.mjs [port]
+*/
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';

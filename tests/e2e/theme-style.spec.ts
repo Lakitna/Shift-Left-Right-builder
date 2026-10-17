@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 
 import { STORAGE_KEYS, currentHash, gotoApp, openHeaderMenu, waitForGraph } from './helpers';
 
-/** Visible menu labels, in registry order. Style ids are public API and must never be renamed. */
+/**
+Visible menu labels, in registry order. Style ids are public API and must never be renamed.
+*/
 const STYLE_NAMES = [
     'Classic',
     'Draftsman',
