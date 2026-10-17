@@ -2,3 +2,6 @@ node_modules/
 out/
 dist/
 pact/
+test-results/
+playwright-report/
+blob-report/

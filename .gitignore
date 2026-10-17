@@ -12,6 +12,12 @@ node_modules/
 dist/
 out/
 
+# Test output
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # TypeScript cache
 *.tsbuildinfo
 

@@ -1,0 +1,16 @@
+{
+    // Type-checks the test suites. Kept separate from the root tsconfig so that
+    // `npm run build` (which includes only "src") never sees the test files, while
+    // `npm run typecheck:tests` still gets real `strict` checking over them.
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        // Node globals for the test runner; the DOM lib is inherited from the root
+        // config, which is what types the browser APIs the app modules use.
+        "types": [
+            "node"
+        ]
+    },
+    "include": [
+        "."
+    ]
+}
