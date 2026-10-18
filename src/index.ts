@@ -11,30 +11,31 @@ Lakitna
 
 import { createEditor, type GraphEditor } from './editor';
 import { buildSvgString, exportPng, exportSvg, measurePngSheet, renderPngPreview } from './export';
-import { collectDialogElements, createExportDialog, createPreviewRefresher } from './exportDialog';
+import { collectDialogElements, createExportDialog, createPreviewRefresher } from './export-dialog';
+import { ensureFontFaces, loadStyleFonts } from './fonts';
 import { History } from './history';
-import { cloneModel, type GraphModel } from './model';
+import { cloneModel } from './model';
 import { PRESETS } from './presets';
 import {
     clampPngWidth,
     createPngSettingsStore,
     createSvgSettingsStore,
     PNG_DEFAULT_WIDTH,
+    type ExportSettingsBase,
     type PngSettings,
 } from './settings';
-import { ensureFontFaces, loadStyleFonts } from './fonts';
-import { DEFAULT_STYLE_ID, STYLES } from './styles';
-import { validateAllStyles } from './styles/validate';
 import {
-    applyChromeVars as applyChromeVariables,
+    applyChromeVariables,
     getActiveStyle,
     getActiveStyleId,
     readStoredStyleId,
     setActiveStyle,
-} from './styleState';
+} from './style-state';
+import { DEFAULT_STYLE_ID, STYLES, type GraphStyle } from './styles';
+import { validateAllStyles } from './styles/validate';
 import { initTheme, isDarkMode, toggleTheme } from './theme';
 import { flashButton, mustFind } from './ui';
-import { readHash, writeStateToHash } from './urlState';
+import { readHash, writeStateToHash } from './url-state';
 
 initTheme();
 // Style before first render: chrome CSS vars must be right from the start. The URL (read in
@@ -49,98 +50,122 @@ const INVALID_HASH_MESSAGE =
 
 // --- DOM ---------------------------------------------------------------------
 
-const canvas = mustFind<HTMLElement>('graph-container');
-const toolbarElement = mustFind<HTMLElement>('editor-toolbar');
-const warningBanner = mustFind<HTMLElement>('warning');
-const copyButton = mustFind<HTMLButtonElement>('btn-copy-link');
-const shareButton = mustFind<HTMLButtonElement>('btn-share');
-const shareMenu = mustFind<HTMLElement>('share-menu');
-const styleButton = mustFind<HTMLButtonElement>('btn-style');
-const styleMenu = mustFind<HTMLElement>('style-menu');
-const themeButton = mustFind<HTMLButtonElement>('btn-theme');
+const canvas = mustFind('graph-container', HTMLElement);
+const toolbarElement = mustFind('editor-toolbar', HTMLDivElement);
+const warningBanner = mustFind('warning', HTMLDivElement);
+const copyButton = mustFind('btn-copy-link', HTMLButtonElement);
+const shareButton = mustFind('btn-share', HTMLButtonElement);
+const shareMenu = mustFind('share-menu', HTMLDivElement);
+const styleButton = mustFind('btn-style', HTMLButtonElement);
+const styleMenu = mustFind('style-menu', HTMLDivElement);
+const themeButton = mustFind('btn-theme', HTMLButtonElement);
 
 const pngDialog = collectDialogElements('png');
 const svgDialog = collectDialogElements('svg');
-const pngWidthInput = mustFind<HTMLInputElement>('png-width');
-const pngSizeHint = mustFind<HTMLElement>('png-size-hint');
+const pngWidthInput = mustFind('png-width', HTMLInputElement);
+const pngSizeHint = mustFind('png-size-hint', HTMLParagraphElement);
 
 // --- Model + history ---------------------------------------------------------
 
-let model: GraphModel;
-let warningMessage = '';
+/**
+ * Mutable app state, held in one object so that no function assigns a module-level `let`
+ * (`unicorn/no-top-level-assignment-in-function`). `loadFromHash()` replaces the model with the
+ * URL's own (or leaves the default) before the first render.
+ */
+const appState = {
+    model: cloneModel(DEFAULT_MODEL.data),
+    warningMessage: '',
+};
 const history = new History();
 
 // --- Editor ------------------------------------------------------------------
 
 const editor: GraphEditor = createEditor(toolbarElement, canvas, {
-    getModel: () => model,
+    getModel: () => appState.model,
     replaceModel: (next) => {
-        model = next;
-        history.push(model);
+        appState.model = next;
+        history.push(appState.model);
         render();
     },
     onCommit: () => {
-        history.push(model);
+        history.push(appState.model);
         render();
     },
-    onLive: () => { syncUrl(); },
-    undo: () => { applyHistoryStep(-1); },
-    redo: () => { applyHistoryStep(1); },
+    onLive: () => {
+        syncUrl();
+    },
+    undo: () => {
+        applyHistoryStep(-1);
+    },
+    redo: () => {
+        applyHistoryStep(1);
+    },
     canUndo: () => history.canUndo(),
     canRedo: () => history.canRedo(),
 });
 
 function applyHistoryStep(offset: -1 | 1): void {
     const restored = history.step(offset);
-    if (restored === null) {
+    if (restored === undefined) {
         return;
     }
 
-    model = restored;
+    appState.model = restored;
     render();
 }
 
 function showWarning(message: string): void {
-    warningMessage = message;
+    appState.warningMessage = message;
     warningBanner.hidden = false;
     warningBanner.textContent = message;
 }
 
 // --- URL sync ----------------------------------------------------------------
 
-let urlTimer: number | undefined;
+/**
+ * The debounced hash update's timer, held inside a closure so that no function assigns a
+ * module-level `let` (`unicorn/no-top-level-assignment-in-function`).
+ */
+const urlSync = (() => {
+    let timer: number | undefined;
+    const cancel = (): void => {
+        if (timer === undefined) {
+            return;
+        }
 
-function cancelUrlSync(): void {
-    if (urlTimer === undefined) {
-        return;
-    }
-
-    globalThis.clearTimeout(urlTimer);
-    urlTimer = undefined;
-}
+        globalThis.clearTimeout(timer);
+        timer = undefined;
+    };
+    const schedule = (run: () => void): void => {
+        cancel();
+        timer = globalThis.setTimeout(() => {
+            timer = undefined;
+            run();
+        }, URL_SYNC_DELAY_MS);
+    };
+    return { cancel, schedule };
+})();
 
 /**
 Debounced hash update (used during live drags).
 */
 function syncUrl(): void {
-    cancelUrlSync();
-    urlTimer = globalThis.setTimeout(() => {
-        urlTimer = undefined;
-        void writeStateToHash(model, getActiveStyleId());
-    }, URL_SYNC_DELAY_MS);
+    urlSync.schedule(() => {
+        void writeStateToHash(appState.model, getActiveStyleId());
+    });
 }
 
 /**
 Immediate hash update; resolves once the URL carries the current model.
 */
 async function syncUrlNow(): Promise<void> {
-    cancelUrlSync();
-    await writeStateToHash(model, getActiveStyleId());
+    urlSync.cancel();
+    await writeStateToHash(appState.model, getActiveStyleId());
 }
 
 function render(): void {
-    warningBanner.hidden = warningMessage === '';
-    warningBanner.textContent = warningMessage;
+    warningBanner.hidden = appState.warningMessage === '';
+    warningBanner.textContent = appState.warningMessage;
     updateThemeButton();
     renderStyleMenu();
     editor.render();
@@ -173,18 +198,19 @@ globalThis.addEventListener('keydown', (event) => {
             target.tagName === 'SELECT' ||
             target.isContentEditable);
     const key = event.key.toLowerCase();
-    if ((event.ctrlKey || event.metaKey) && key === 'z') {
+    if (key === 'z' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         applyHistoryStep(event.shiftKey ? 1 : -1);
         return;
     }
-    if ((event.ctrlKey || event.metaKey) && key === 'y') {
+    if (key === 'y' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         applyHistoryStep(1);
         return;
     }
     if (isTyping) return;
-    const arrowDelta: Record<string, [number, number]> = {
+    // Keys that are not listed have no nudge, hence the explicit undefined in the value type.
+    const arrowDelta: Record<string, [number, number] | undefined> = {
         ArrowLeft: [-1, 0],
         ArrowRight: [1, 0],
         ArrowUp: [0, 1],
@@ -212,9 +238,18 @@ globalThis.addEventListener('keydown', (event) => {
 
 // --- Style selector ----------------------------------------------------------
 
-function setStyleMenuOpen(open: boolean): void {
-    styleMenu.hidden = !open;
-    styleButton.setAttribute('aria-expanded', String(open));
+function setStyleMenuOpen(isOpen: boolean): void {
+    styleMenu.hidden = !isOpen;
+    styleButton.setAttribute('aria-expanded', String(isOpen));
+}
+
+/**
+ * A second repaint once a newly applied style's fonts resolve: `textWidth()` measures with canvas
+ * metrics, so wrapping and chip sizing change with the real typeface.
+ */
+async function repaintWithFonts(style: GraphStyle): Promise<void> {
+    await loadStyleFonts(style);
+    render();
 }
 
 /**
@@ -245,9 +280,7 @@ function renderStyleMenu(): void {
             const applied = setActiveStyle(style.id);
             setStyleMenuOpen(false);
             render();
-            // A second repaint once the new style's fonts resolve: textWidth() measures with
-            // canvas metrics, so wrapping and chip sizing change with the real typeface.
-            void loadStyleFonts(applied).then(() => { render(); });
+            void repaintWithFonts(applied);
         });
         styleMenu.append(button);
     }
@@ -261,9 +294,9 @@ styleButton.addEventListener('click', () => {
 
 // --- Share menu --------------------------------------------------------------
 
-function setShareMenuOpen(open: boolean): void {
-    shareMenu.hidden = !open;
-    shareButton.setAttribute('aria-expanded', String(open));
+function setShareMenuOpen(isOpen: boolean): void {
+    shareMenu.hidden = !isOpen;
+    shareButton.setAttribute('aria-expanded', String(isOpen));
 }
 
 shareButton.addEventListener('click', () => {
@@ -274,9 +307,9 @@ shareButton.addEventListener('click', () => {
 document.addEventListener('pointerdown', (event) => {
     const target = event.target;
     const isInside = target instanceof Element && target.closest('.share-wrap') !== null;
-    if (!shareMenu.hidden && !isInside) setShareMenuOpen(false);
+    if (!isInside && !shareMenu.hidden) setShareMenuOpen(false);
     const isInsideStyle = target instanceof Element && target.closest('.style-wrap') !== null;
-    if (!styleMenu.hidden && !isInsideStyle) setStyleMenuOpen(false);
+    if (!isInsideStyle && !styleMenu.hidden) setStyleMenuOpen(false);
 });
 
 async function copyLink(): Promise<void> {
@@ -287,10 +320,11 @@ async function copyLink(): Promise<void> {
     } catch {
         flashButton(copyButton, 'Copy failed');
     }
+    setShareMenuOpen(false);
 }
 
 copyButton.addEventListener('click', () => {
-    void copyLink().then(() => { setShareMenuOpen(false); });
+    void copyLink();
 });
 
 // --- Export dialogs ----------------------------------------------------------
@@ -316,7 +350,7 @@ const svgStore = createSvgSettingsStore(SVG_SETTINGS_KEY, () => ({
 // --- PNG ---------------------------------------------------------------------
 
 function currentPngSheet(): { width: number; height: number } {
-    return measurePngSheet(model, {
+    return measurePngSheet(appState.model, {
         dark: pngDialog.themeDarkRadio.checked,
         transparent: pngDialog.transparentInput.checked,
         includeLegend: pngDialog.legendInput.checked,
@@ -327,14 +361,34 @@ function updatePngSizeHint(): void {
     const sheet = currentPngSheet();
     const width = clampPngWidth(Number(pngWidthInput.value));
     const height = Math.round((width * sheet.height) / sheet.width);
-    pngSizeHint.textContent = `Exports at about ${width} × ${height} px`;
+    pngSizeHint.textContent = `Exports at about ${String(width)} × ${String(height)} px`;
+}
+
+/**
+Run the PNG export, turning a failure into the warning banner instead of a rejected promise.
+*/
+async function runPngExport(settings: PngSettings): Promise<void> {
+    const scale = Math.min(10, Math.max(0.1, settings.width / currentPngSheet().width));
+    try {
+        await exportPng(appState.model, {
+            filename: settings.filename,
+            dark: settings.theme === 'dark',
+            scale,
+            transparent: settings.transparent,
+            includeLegend: settings.includeLegend,
+        });
+    } catch (error) {
+        showWarning(`PNG export failed: ${String(error)}`);
+    }
 }
 
 const pngPreview = createExportDialog<PngSettings>(pngDialog, {
     extension: 'png',
     fallbackFilename: 'shift-left-right.png',
     loadSettings: () => pngStore.read(),
-    saveSettings: (settings) => { pngStore.write(settings); },
+    saveSettings: (settings) => {
+        pngStore.write(settings);
+    },
     readCommon: (current, common) => ({
         ...current,
         ...common,
@@ -345,16 +399,7 @@ const pngPreview = createExportDialog<PngSettings>(pngDialog, {
     },
     onOptionsChanged: refreshPngPreview,
     onDownload: (settings) => {
-        const scale = Math.min(10, Math.max(0.1, settings.width / currentPngSheet().width));
-        exportPng(model, {
-            filename: settings.filename,
-            dark: settings.theme === 'dark',
-            scale,
-            transparent: settings.transparent,
-            includeLegend: settings.includeLegend,
-        }).catch((error: unknown) => {
-            showWarning(`PNG export failed: ${String(error)}`);
-        });
+        void runPngExport(settings);
     },
 });
 
@@ -364,7 +409,7 @@ Debounced rasterized preview; the refresher drops out-of-order and post-close re
 const pngRefresher = createPreviewRefresher(
     pngPreview,
     () =>
-        renderPngPreview(model, {
+        renderPngPreview(appState.model, {
             dark: pngDialog.themeDarkRadio.checked,
             transparent: pngDialog.transparentInput.checked,
             includeLegend: pngDialog.legendInput.checked,
@@ -381,7 +426,7 @@ function refreshPngPreview(): void {
 }
 
 pngWidthInput.addEventListener('input', updatePngSizeHint);
-mustFind<HTMLButtonElement>('btn-export-png').addEventListener('click', () => {
+mustFind('btn-export-png', HTMLButtonElement).addEventListener('click', () => {
     setShareMenuOpen(false);
     pngPreview.show();
 });
@@ -392,39 +437,52 @@ const svgPreview = createExportDialog(svgDialog, {
     extension: 'svg',
     fallbackFilename: 'shift-left-right.svg',
     loadSettings: () => svgStore.read(),
-    saveSettings: (settings) => { svgStore.write(settings); },
+    saveSettings: (settings) => {
+        svgStore.write(settings);
+    },
     readCommon: (current, common) => ({ ...current, ...common }),
     onOptionsChanged: refreshSvgPreview,
     onDownload: (settings) => {
-        exportSvg(model, {
+        void runSvgExport(settings);
+    },
+});
+
+/**
+Run the SVG export, turning a failure into the warning banner instead of a rejected promise.
+*/
+async function runSvgExport(settings: ExportSettingsBase): Promise<void> {
+    try {
+        await exportSvg(appState.model, {
             filename: settings.filename,
             dark: settings.theme === 'dark',
             transparent: settings.transparent,
             includeLegend: settings.includeLegend,
-        }).catch((error: unknown) => {
-            showWarning(`SVG export failed: ${String(error)}`);
         });
-    },
-});
+    } catch (error) {
+        showWarning(`SVG export failed: ${String(error)}`);
+    }
+}
 
 const svgRefresher = createPreviewRefresher(
     svgPreview,
     async () => {
-        const svgString = await buildSvgString(model, {
+        const svgString = await buildSvgString(appState.model, {
             dark: svgDialog.themeDarkRadio.checked,
             transparent: svgDialog.transparentInput.checked,
             includeLegend: svgDialog.legendInput.checked,
         });
         return new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     },
-    () => { svgPreview.hidePreview(); }
+    () => {
+        svgPreview.hidePreview();
+    }
 );
 
 function refreshSvgPreview(): void {
     svgRefresher.refresh();
 }
 
-mustFind<HTMLButtonElement>('btn-export-svg').addEventListener('click', () => {
+mustFind('btn-export-svg', HTMLButtonElement).addEventListener('click', () => {
     setShareMenuOpen(false);
     svgPreview.show();
 });
@@ -433,21 +491,21 @@ mustFind<HTMLButtonElement>('btn-export-svg').addEventListener('click', () => {
 
 async function loadFromHash(): Promise<void> {
     const hash = await readHash();
-    if (hash.styleId !== null) {
+    if (hash.styleId !== undefined) {
         // A shared link's style wins for this page load, but persist=false keeps it from
         // overwriting the viewer's own stored preference.
         setActiveStyle(hash.styleId, false);
     }
-    if (hash.model !== null) {
-        model = hash.model;
-        warningMessage = '';
+    if (hash.model === undefined) {
+        appState.model = cloneModel(DEFAULT_MODEL.data);
+        appState.warningMessage = hash.present ? INVALID_HASH_MESSAGE : '';
     } else {
-        model = cloneModel(DEFAULT_MODEL.data);
-        warningMessage = hash.present ? INVALID_HASH_MESSAGE : '';
+        appState.model = hash.model;
+        appState.warningMessage = '';
     }
     // Gate the first paint on the style's fonts — layout math measures text.
     await loadStyleFonts(getActiveStyle());
-    history.reset(model);
+    history.reset(appState.model);
     render();
 }
 

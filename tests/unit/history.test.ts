@@ -12,8 +12,8 @@ describe('REQ-04 undo/redo history', () => {
         const history = new History();
         expect(history.canUndo()).toBe(false);
         expect(history.canRedo()).toBe(false);
-        expect(history.step(-1)).toBeNull();
-        expect(history.step(1)).toBeNull();
+        expect(history.step(-1)).toBeUndefined();
+        expect(history.step(1)).toBeUndefined();
     });
 
     it('treats a repeated push of the same model as a no-op', () => {
@@ -45,18 +45,18 @@ describe('REQ-04 undo/redo history', () => {
 
         history.push(makeModel({ title: 'C' }));
         expect(history.canRedo()).toBe(false);
-        expect(history.step(1)).toBeNull();
+        expect(history.step(1)).toBeUndefined();
         expect(history.step(-1)?.title).toBe('A');
     });
 
-    it('caps the history at 100 states and returns null past the oldest', () => {
+    it('caps the history at 100 states and returns undefined past the oldest', () => {
         const history = new History();
         for (let index = 0; index < 150; index += 1) {
-            history.push(makeModel({ title: `T${index}` }));
+            history.push(makeModel({ title: `T${String(index)}` }));
         }
 
         let steps = 0;
-        while (history.step(-1) !== null) steps += 1;
+        while (history.step(-1) !== undefined) steps += 1;
 
         // 100 retained states means 99 steps back before the boundary.
         expect(steps).toBe(99);
@@ -70,8 +70,8 @@ describe('REQ-04 undo/redo history', () => {
         history.reset(makeModel({ title: 'Z' }));
         expect(history.canUndo()).toBe(false);
         expect(history.canRedo()).toBe(false);
-        expect(history.step(1)).toBeNull();
-        expect(history.step(-1)).toBeNull();
+        expect(history.step(1)).toBeUndefined();
+        expect(history.step(-1)).toBeUndefined();
     });
 
     it('hands back a detached model, not a live reference into the history', () => {
@@ -82,7 +82,8 @@ describe('REQ-04 undo/redo history', () => {
 
         const restored = history.step(-1);
         expect(restored).not.toBe(original);
-        restored!.curves[0].points[0].y = 42;
+        if (restored === undefined) throw new Error('history.step(-1) should have returned a model');
+        restored.curves[0].points[0].y = 42;
         expect(original.curves[0].points[0].y).toBe(0);
     });
 });

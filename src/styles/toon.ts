@@ -52,7 +52,7 @@ export const toonStyle: GraphStyle = {
             chip: '#ffffff',
             chipStroke: '#16130e',
             chipText: '#16130e',
-            hint: '#b3a88f',
+            hint: '#766f5e',
         },
         dark: {
             // Night-time comic: the ink stays BLACK (cartoon means black lines, day or
@@ -77,7 +77,7 @@ export const toonStyle: GraphStyle = {
             chip: '#ffffff',
             chipStroke: '#0d0f16',
             chipText: '#16130e',
-            hint: '#5f6b85',
+            hint: '#7d879c',
         },
     },
     fills: {
@@ -99,7 +99,7 @@ export const toonStyle: GraphStyle = {
         haloWidth: 0,
     },
     frame: 'single',
-    sparkles: null,
+    sparkles: undefined,
     curves: {
         colorSource: 'palette',
         palette: {

@@ -1,0 +1,22 @@
+﻿src/editor.ts(510,83): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(587,72): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(592,76): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(597,78): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(605,50): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(605,96): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(689,54): error TS2345: Argument of type 'GraphEvent | undefined' is not assignable to parameter of type 'GraphEvent'.
+  Type 'undefined' is not assignable to type 'GraphEvent'.
+src/editor.ts(690,87): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(705,67): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/editor.ts(968,81): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/index.ts(105,5): error TS2322: Type 'GraphModel | undefined' is not assignable to type 'GraphModel'.
+  Type 'undefined' is not assignable to type 'GraphModel'.
+src/index.ts(455,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/index.ts(458,9): error TS2322: Type 'GraphModel | undefined' is not assignable to type 'GraphModel'.
+  Type 'undefined' is not assignable to type 'GraphModel'.
+src/render.ts(675,24): error TS2532: Object is possibly 'undefined'.
+src/render.ts(705,13): error TS2322: Type 'Pt | undefined' is not assignable to type 'Pt'.
+  Type 'undefined' is not assignable to type 'Pt'.
+src/render.ts(713,9): error TS2322: Type 'Pt | undefined' is not assignable to type 'Pt'.
+  Type 'undefined' is not assignable to type 'Pt'.

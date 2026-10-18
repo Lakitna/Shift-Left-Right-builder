@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MODEL_VERSION, cloneModel } from '../../src/model';
 import { PRESETS } from '../../src/presets';
-import { decodeModel, encodeModel } from '../../src/urlState';
+import { decodeModel, encodeModel } from '../../src/url-state';
 import { makeCurve, makeModel } from './fixtures';
 
 function inflateWire(encoded: string): Record<string, unknown> {
@@ -23,7 +23,8 @@ function inflateWire(encoded: string): Record<string, unknown> {
 }
 
 function deflateAsHash(value: unknown): string {
-    return deflateRawSync(Buffer.from(JSON.stringify(value), 'utf8')).toString('base64url');
+    const bytes = Buffer.from(JSON.stringify(value), 'utf8');
+    return deflateRawSync(bytes).toString('base64url');
 }
 
 describe('REQ-01 / REQ-11 URL encoding', () => {
@@ -60,11 +61,14 @@ describe('REQ-01 / REQ-11 URL encoding', () => {
     it('always writes events, even when the model has none', async () => {
         const encoded = await encodeModel(makeModel({ events: [] }));
         expect(inflateWire(encoded).events).toEqual([]);
-        expect((await decodeModel(encoded))?.events).toEqual([]);
+
+        const decoded = await decodeModel(encoded);
+        expect(decoded?.events).toEqual([]);
     });
 
     it('omits fields that hold their default value but always writes both titles', async () => {
-        const wire = inflateWire(await encodeModel(makeModel({ curves: [makeCurve()] })));
+        const model = makeModel({ curves: [makeCurve()] });
+        const wire = inflateWire(await encodeModel(model));
 
         // Always written so the decoded model satisfies the strict parseModel shape.
         expect(typeof wire.title).toBe('string');
@@ -93,24 +97,25 @@ describe('REQ-01 / REQ-11 URL encoding', () => {
         });
 
         const encoded = await encodeModel(heavy);
-        expect(encoded.length).toBeLessThan(
-            Buffer.byteLength(JSON.stringify(inflateWire(encoded)), 'utf8')
-        );
+        const json = JSON.stringify(inflateWire(encoded));
+        expect(encoded.length).toBeLessThan(Buffer.byteLength(json, 'utf8'));
     });
 
     it('rejects a payload that is not valid compressed data', async () => {
-        expect(await decodeModel('!!!not-base64!!!')).toBeNull();
-        expect(await decodeModel('')).toBeNull();
+        expect(await decodeModel('!!!not-base64!!!')).toBeUndefined();
+        expect(await decodeModel('')).toBeUndefined();
     });
 
     // EXPECTED RED — desired behavior, not yet implemented.
-    // `pipeBytes` in urlState.ts starts `writer.write(...)` and `writer.close()` with `void`, so
+    // `pipeBytes` in url-state.ts starts `writer.write(...)` and `writer.close()` with `void`, so
     // when the stream errors on a corrupt payload those promises reject with nobody listening.
-    // The decode still returns null, so the bug is invisible except as a leaked unhandled
+    // The decode still returns undefined, so the bug is invisible except as a leaked unhandled
     // rejection on every malformed share link.
     it('leaks no unhandled rejection when a payload is corrupt', async () => {
         const leaks: unknown[] = [];
-        const onLeak = (reason: unknown) => leaks.push(reason);
+        const onLeak = (reason: unknown) => {
+            leaks.push(reason);
+        };
         process.on('unhandledRejection', onLeak);
         try {
             await decodeModel('');
@@ -123,8 +128,9 @@ describe('REQ-01 / REQ-11 URL encoding', () => {
     });
 
     it('rejects a pre-release uncompressed link', async () => {
-        const plain = Buffer.from(JSON.stringify(makeModel()), 'utf8').toString('base64url');
-        expect(await decodeModel(plain)).toBeNull();
+        const bytes = Buffer.from(JSON.stringify(makeModel()), 'utf8');
+        const plain = bytes.toString('base64url');
+        expect(await decodeModel(plain)).toBeUndefined();
     });
 
     it('rejects a payload from a different model version', async () => {
@@ -136,11 +142,11 @@ describe('REQ-01 / REQ-11 URL encoding', () => {
             events: [],
             curves: [],
         });
-        expect(await decodeModel(other)).toBeNull();
+        expect(await decodeModel(other)).toBeUndefined();
     });
 
     it('rejects a payload that inflates but is not a valid model', async () => {
         const notAModel = deflateAsHash({ version: MODEL_VERSION, nope: true });
-        expect(await decodeModel(notAModel)).toBeNull();
+        expect(await decodeModel(notAModel)).toBeUndefined();
     });
 });

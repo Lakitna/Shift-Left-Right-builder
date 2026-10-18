@@ -79,6 +79,24 @@ export default defineConfig(
         },
     },
 
+    // The root config files are handed to their own tool as a plain object. `defineConfig(...)` is
+    // the documented way to build that object, so it is declared a pure export of those two import
+    // sources instead of being mistaken for a top-level side effect.
+    {
+        files: ['*.config.ts'],
+        rules: {
+            'unicorn/no-top-level-side-effects': [
+                'error',
+                {
+                    allow: {
+                        '@playwright/test': ['defineConfig'],
+                        tsdown: ['defineConfig'],
+                    },
+                },
+            ],
+        },
+    },
+
     // Playwright `page.evaluate` callbacks are serialised and executed *in the browser*, so the
     // browser globals they reference genuinely exist at runtime. Declaring them tells
     // `unicorn/isolated-functions` the truth about that scope instead of it guessing.
@@ -86,8 +104,10 @@ export default defineConfig(
         files: ['tests/e2e/**'],
         languageOptions: {
             globals: {
+                CSS: 'readonly',
                 document: 'readonly',
                 getComputedStyle: 'readonly',
+                localStorage: 'readonly',
                 navigator: 'readonly',
                 window: 'readonly',
             },

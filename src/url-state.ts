@@ -115,7 +115,7 @@ function toBinary(bytes: Uint8Array): string {
     let binary = '';
     const CHUNK = 8192;
     for (let index = 0; index < bytes.length; index += CHUNK) {
-        binary += String.fromCharCode(...bytes.subarray(index, index + CHUNK));
+        binary += String.fromCodePoint(...bytes.subarray(index, index + CHUNK));
     }
     return binary;
 }
@@ -136,22 +136,26 @@ function fromBase64Url(encoded: string): Uint8Array<ArrayBuffer> {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
-        bytes[index] = binary.charCodeAt(index);
+        bytes[index] = binary.codePointAt(index) ?? 0;
     }
     return bytes;
 }
 
 /**
-Push bytes through a Compression/DecompressionStream and collect the output.
-*/
+ * Push bytes through a Compression/DecompressionStream and collect the output.
+ *
+ * The bytes are wrapped in a `Response` so the transform gets a proper stream body to pipe
+ * through. `pipeThrough` marks its internal piping promise as handled and errors the output
+ * stream, so a corrupt payload surfaces as a rejected `arrayBuffer()` — one handled rejection
+ * on the normal `catch` path, and no unhandled one.
+ */
 async function pipeBytes(
     bytes: Uint8Array<ArrayBuffer>,
     stream: CompressionStream | DecompressionStream
 ): Promise<Uint8Array> {
-    const writer = stream.writable.getWriter();
-    void writer.write(bytes);
-    void writer.close();
-    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+    const source = new Response(bytes).body;
+    if (source === null) throw new Error('Response body stream is unavailable');
+    return new Uint8Array(await new Response(source.pipeThrough(stream)).arrayBuffer());
 }
 
 /**
@@ -167,9 +171,9 @@ export async function encodeModel(model: GraphModel): Promise<string> {
 }
 
 /**
-Decode a base64url DEFLATE string back into a validated model, or null when invalid.
+Decode a base64url DEFLATE string back into a validated model, or undefined when invalid.
 */
-export async function decodeModel(encoded: string): Promise<GraphModel | null> {
+export async function decodeModel(encoded: string): Promise<GraphModel | undefined> {
     try {
         const inflated = await pipeBytes(
             fromBase64Url(encoded),
@@ -177,34 +181,34 @@ export async function decodeModel(encoded: string): Promise<GraphModel | null> {
         );
         const parsed = JSON.parse(new TextDecoder().decode(inflated)) as {
             version?: unknown;
-        } | null;
-        return typeof parsed !== 'object' || parsed === null || parsed.version !== MODEL_VERSION ? null : parseModel(fromWire(parsed as WireModel));
+        } | undefined;
+        return parsed?.version === MODEL_VERSION ? parseModel(fromWire(parsed as WireModel)) : undefined;
     } catch {
-        return null;
+        return undefined;
     }
 }
 
 export interface HashReadResult {
     /**
-    The decoded model, or null when absent/invalid.
+    The decoded model, or undefined when absent/invalid.
     */
-    model: GraphModel | null;
+    model: GraphModel | undefined;
     /**
     Whether the hash contained model data at all (even if invalid).
     */
     present: boolean;
     /**
-    The shared style id, or null when absent/unknown (the viewer's own preference applies).
+    The shared style id, or undefined when absent/unknown (the viewer's own preference applies).
     */
-    styleId: string | null;
+    styleId: string | undefined;
 }
 
 export async function readHash(): Promise<HashReadResult> {
     const parameters = new URLSearchParams(globalThis.location.hash.replace(/^#/, ''));
     const styleParameter = parameters.get(STYLE_PARAM);
-    const styleId = styleParameter !== null && isValidStyleId(styleParameter) ? styleParameter : null;
+    const styleId = styleParameter !== null && isValidStyleId(styleParameter) ? styleParameter : undefined;
     const value = parameters.get(HASH_PARAM);
-    return value === null || value === '' ? { model: null, present: false, styleId } : { model: await decodeModel(value), present: true, styleId };
+    return value === null || value === '' ? { model: undefined, present: false, styleId } : { model: await decodeModel(value), present: true, styleId };
 }
 
 /**
@@ -217,5 +221,5 @@ export async function writeStateToHash(model: GraphModel, styleId: string): Prom
     const parameters = new URLSearchParams();
     parameters.set(HASH_PARAM, encoded);
     if (styleId !== DEFAULT_STYLE_ID) parameters.set(STYLE_PARAM, styleId);
-    globalThis.history.replaceState(null, '', `#${parameters.toString()}`);
+    globalThis.history.replaceState(undefined, '', `#${parameters.toString()}`);
 }

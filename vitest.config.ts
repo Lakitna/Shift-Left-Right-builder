@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Component tests. They target this repo's *pure-logic* modules only (model, presets,
- * history, urlState encode/decode, the style registry + WCAG contrast math, the settings
+ * history, url-state encode/decode, the style registry + WCAG contrast math, the settings
  * validators and the `ui` string helpers), so the plain `node` environment is enough and no
  * jsdom/happy-dom dependency is needed. DOM-driven behavior is covered by the Playwright
  * GUI suite in `tests/e2e` instead.

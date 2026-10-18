@@ -9,25 +9,39 @@ import { isDarkMode } from './theme';
 
 const STORAGE_KEY = 'shift-left-right-style';
 
-let activeId: string = DEFAULT_STYLE_ID;
+/**
+ * The active style id, held inside a closure rather than a module-level `let`: a function may not
+ * assign a top-level binding (`unicorn/no-top-level-assignment-in-function`).
+ */
+const activeStyle = (() => {
+    let id: string = DEFAULT_STYLE_ID;
+    return {
+        get(): string {
+            return id;
+        },
+        set(next: string): void {
+            id = next;
+        },
+    };
+})();
 
 export function getActiveStyleId(): string {
-    return activeId;
+    return activeStyle.get();
 }
 
 export function getActiveStyle(): GraphStyle {
-    return getStyle(activeId);
+    return getStyle(activeStyle.get());
 }
 
 /**
-The stored style id, or null when absent/unknown.
+The stored style id, or undefined when absent/unknown.
 */
-export function readStoredStyleId(): string | null {
+export function readStoredStyleId(): string | undefined {
     try {
         const stored = globalThis.localStorage.getItem(STORAGE_KEY);
-        return isValidStyleId(stored) ? stored : null;
+        return isValidStyleId(stored) ? stored : undefined;
     } catch {
-        return null;
+        return undefined;
     }
 }
 
@@ -35,13 +49,13 @@ export function readStoredStyleId(): string | null {
  * Make `id` the active style (unknown ids fall back to classic), apply its chrome CSS
  * variables and persist the choice. Returns the resolved style.
  */
-export function setActiveStyle(id: string, persist = true): GraphStyle {
+export function setActiveStyle(id: string, shouldPersist = true): GraphStyle {
     const style = getStyle(id);
-    activeId = style.id;
-    applyChromeVars(style);
-    if (persist) {
+    activeStyle.set(style.id);
+    applyChromeVariables(style);
+    if (shouldPersist) {
         try {
-            globalThis.localStorage.setItem(STORAGE_KEY, activeId);
+            globalThis.localStorage.setItem(STORAGE_KEY, activeStyle.get());
         } catch {
             // Private mode / disabled storage: the selection still works for this session.
         }
@@ -68,11 +82,11 @@ const CHROME_VARS = [
  * Optional tokens a style omits (like --accent-ink) are removed, falling back to the
  * stylesheet default.
  */
-export function applyChromeVars(
+export function applyChromeVariables(
     style: GraphStyle = getActiveStyle(),
-    dark: boolean = isDarkMode()
+    isDark: boolean = isDarkMode()
 ): void {
-    const tokens = dark ? style.chrome.dark : style.chrome.light;
+    const tokens = isDark ? style.chrome.dark : style.chrome.light;
     for (const name of CHROME_VARS) {
         const value = tokens[name];
         if (value === undefined) {

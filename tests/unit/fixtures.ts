@@ -52,8 +52,8 @@ export function makeModel(overrides: Partial<GraphModel> = {}): GraphModel {
 }
 
 /**
-A `makeModel` result as plain JSON data, for feeding deliberately-broken payloads into parseModel.
+A detached copy of a `makeModel` result, for feeding deliberately-broken payloads into parseModel.
 */
 export function makeRawModel(): Record<string, unknown> {
-    return JSON.parse(JSON.stringify(makeModel())) as Record<string, unknown>;
+    return structuredClone(makeModel()) as unknown as Record<string, unknown>;
 }

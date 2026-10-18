@@ -10,11 +10,11 @@
 // time. Keep fonts OFL-licensed — they are redistributed as files.
 import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import path from 'node:path';
 
-const ROOT = resolve(import.meta.dirname, '..');
-const OUT_DIR = resolve(ROOT, 'src/fonts');
-const OUT_FILE = resolve(ROOT, 'src/fonts.generated.ts');
+const ROOT = path.resolve(import.meta.dirname, '..');
+const OUT_DIR = path.resolve(ROOT, 'src/fonts');
+const OUT_FILE = path.resolve(ROOT, 'src/fonts.generated.ts');
 
 /**
 @type {{ pkg: string, family: string, weights: number[] }[]}
@@ -38,17 +38,17 @@ mkdirSync(OUT_DIR, { recursive: true });
 const faces = [];
 for (const { pkg, family, weights } of MANIFEST) {
     for (const weight of weights) {
-        const file = resolve(ROOT, `node_modules/@fontsource/${pkg}/files/${pkg}-latin-${weight}-normal.woff2`);
+        const file = path.resolve(ROOT, `node_modules/@fontsource/${pkg}/files/${pkg}-latin-${weight}-normal.woff2`);
         let bytes;
         try {
             bytes = readFileSync(file);
         } catch {
-            console.error(`Missing ${file} — run: npm install (or fix the manifest).`);
-            process.exit(1);
+            // A non-zero exit is what npm reports; the message names the fix.
+            throw new Error(`Missing ${file} — run: npm install (or fix the manifest).`);
         }
         const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 10);
         const name = `${pkg}-latin-${weight}-${hash}.woff2`;
-        copyFileSync(file, resolve(OUT_DIR, name));
+        copyFileSync(file, path.resolve(OUT_DIR, name));
         faces.push({ family, weight, url: `fonts/${name}`, kb: bytes.length / 1024 });
         console.log(`  ${family} ${weight}: ${faces.at(-1).kb.toFixed(1)} KB → ${name}`);
     }

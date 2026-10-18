@@ -58,7 +58,7 @@ interface GraphModel {
 ```
 
 - Area for a curve = the (smooth) path through its points, closed down to the baseline (y=0).
-- **URL wire format (version 1, in `urlState.ts`)** is a compact view of the same model: phases are
+- **URL wire format (version 1, in `url-state.ts`)** is a compact view of the same model: phases are
   plain strings, points are `[x, y]` tuples, and default-valued fields are omitted (empty
   title/yAxisTitle/notes, `numericAxis: false`, `smooth: true`, default opacity). The in-memory
   model keeps its explicit object shape — only the encoding is compact.
@@ -102,14 +102,14 @@ interface GraphModel {
   `{ app: 'src/index.ts' }` -> `dist/web/app.js`; copy `index.html` + `styles.css`),
   `scripts/serve-web.mjs`, `.prettierrc` / `.editorconfig` / `.gitignore` / `.prettierignore`,
   `.vscode/*`.
-- `src/theme.ts` (light/dark, `localStorage` key `shift-left-right-theme`), `src/urlState.ts`
+- `src/theme.ts` (light/dark, `localStorage` key `shift-left-right-theme`), `src/url-state.ts`
   (base64url JSON in `#p=`).
 - **Drop for v1:** the 7-style `styles/` system and the `fonts.ts` + `scripts/build-font.mjs` +
   `fonts/` pipeline (use a system font stack).
 
 ## Phases
 
-- **Phase A — Scaffold:** copy infra + config + scripts; add `theme.ts`, `urlState.ts`, and the
+- **Phase A — Scaffold:** copy infra + config + scripts; add `theme.ts`, `url-state.ts`, and the
   `model.ts` type contract (types, constants, `cloneModel`, `parseModel`). Verify `tsc --noEmit`.
 - **Phase B — Model & render:** finish `model.ts` (PALETTE presets, PRESETS, curve/point/phase ops,
   `snapPointToPhase`); write `render.ts` (axes, gridlines, phase ticks, smooth area curves, labels,
@@ -148,7 +148,7 @@ interface GraphModel {
 Phases A–D are implemented and validated in the browser (light + dark). `npm run build` passes
 (tsc + tsdown → `dist/web/app.js` ≈ 35 kB, zero runtime deps).
 
-- **A Scaffold**: build/serve/config infra, `theme.ts`, `urlState.ts`, `model.ts` type contract.
+- **A Scaffold**: build/serve/config infra, `theme.ts`, `url-state.ts`, `model.ts` type contract.
 - **B Model & render**: presets (Schematic/Detailed/Empty), curve/point/phase ops, snapping,
   `style.ts`, `render.ts` (axes, gridlines, phase ticks, translucent Catmull-Rom curves,
   below-legend).

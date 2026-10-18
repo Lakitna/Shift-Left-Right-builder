@@ -51,7 +51,7 @@ export const deStijlStyle: GraphStyle = {
             chip: '#ffffff',
             chipStroke: '#111111',
             chipText: '#111111',
-            hint: '#8d887c',
+            hint: '#6f6b62',
         },
         dark: {
             background: '#0b0b0b',
@@ -75,7 +75,7 @@ export const deStijlStyle: GraphStyle = {
             chip: '#f4f1e8',
             chipStroke: '#111111',
             chipText: '#0b0b0b',
-            hint: '#6b675e',
+            hint: '#7e7b73',
         },
     },
     fills: {
@@ -98,7 +98,7 @@ export const deStijlStyle: GraphStyle = {
         haloWidth: 0,
     },
     frame: 'single',
-    sparkles: null,
+    sparkles: undefined,
     curves: {
         colorSource: 'palette',
         palette: {

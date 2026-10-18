@@ -30,15 +30,15 @@ export interface DialogElements {
  */
 export function collectDialogElements(prefix: string): DialogElements {
     return {
-        dialog: mustFind<HTMLDialogElement>(`${prefix}-dialog`),
-        filenameInput: mustFind<HTMLInputElement>(`${prefix}-filename`),
-        themeLightRadio: mustFind<HTMLInputElement>(`${prefix}-theme-light`),
-        themeDarkRadio: mustFind<HTMLInputElement>(`${prefix}-theme-dark`),
-        transparentInput: mustFind<HTMLInputElement>(`${prefix}-transparent`),
-        legendInput: mustFind<HTMLInputElement>(`${prefix}-legend`),
-        previewImg: mustFind<HTMLImageElement>(`${prefix}-preview-img`),
-        cancelButton: mustFind<HTMLButtonElement>(`${prefix}-cancel`),
-        downloadButton: mustFind<HTMLButtonElement>(`${prefix}-download`),
+        dialog: mustFind(`${prefix}-dialog`, HTMLDialogElement),
+        filenameInput: mustFind(`${prefix}-filename`, HTMLInputElement),
+        themeLightRadio: mustFind(`${prefix}-theme-light`, HTMLInputElement),
+        themeDarkRadio: mustFind(`${prefix}-theme-dark`, HTMLInputElement),
+        transparentInput: mustFind(`${prefix}-transparent`, HTMLInputElement),
+        legendInput: mustFind(`${prefix}-legend`, HTMLInputElement),
+        previewImg: mustFind(`${prefix}-preview-img`, HTMLImageElement),
+        cancelButton: mustFind(`${prefix}-cancel`, HTMLButtonElement),
+        downloadButton: mustFind(`${prefix}-download`, HTMLButtonElement),
     };
 }
 

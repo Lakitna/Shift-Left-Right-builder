@@ -51,7 +51,7 @@ export const draftsmanStyle: GraphStyle = {
             chip: '#fbfaf6',
             chipStroke: '#1c1c1a',
             chipText: '#1c1c1a',
-            hint: '#a8a49a',
+            hint: '#74716a',
         },
         dark: {
             background: '#17181a',
@@ -73,7 +73,7 @@ export const draftsmanStyle: GraphStyle = {
             chip: '#17181a',
             chipStroke: '#f2efe6',
             chipText: '#f2efe6',
-            hint: '#6b675e',
+            hint: '#86827b',
         },
     },
     fills: {
@@ -105,7 +105,7 @@ export const draftsmanStyle: GraphStyle = {
         haloWidth: 10,
     },
     frame: 'double',
-    sparkles: null,
+    sparkles: undefined,
     curves: {
         colorSource: 'palette',
         palette: {

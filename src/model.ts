@@ -158,14 +158,18 @@ const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 Clamp an arbitrary number into the 0..100 coordinate space (NaN/Infinity -> 0).
 */
 export function clampCoord(value: number): number {
-    return Number.isFinite(value) ? Math.min(MAX_COORD, Math.max(MIN_COORD, Math.round(value))) : MIN_COORD;
+    return Number.isFinite(value)
+        ? Math.min(MAX_COORD, Math.max(MIN_COORD, Math.round(value)))
+        : MIN_COORD;
 }
 
 /**
 Clamp an arbitrary number into the valid fill-opacity range.
 */
 export function clampOpacity(value: number): number {
-    return Number.isFinite(value) ? Math.min(MAX_OPACITY, Math.max(MIN_OPACITY, Math.round(value * 100) / 100)) : DEFAULT_OPACITY;
+    return Number.isFinite(value)
+        ? Math.min(MAX_OPACITY, Math.max(MIN_OPACITY, Math.round(value * 100) / 100))
+        : DEFAULT_OPACITY;
 }
 
 /**
@@ -187,7 +191,7 @@ export function cloneModel(source: GraphModel): GraphModel {
         curves: source.curves.map((curve) => ({
             label: curve.label,
             color: curve.color,
-            ...((curve.colorCustom === true) && { colorCustom: true }),
+            ...(curve.colorCustom === true && { colorCustom: true }),
             notes: curve.notes,
             smooth: curve.smooth,
             opacity: curve.opacity,
@@ -196,38 +200,61 @@ export function cloneModel(source: GraphModel): GraphModel {
     };
 }
 
-function record(input: unknown): Record<string, unknown> | null {
-    return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : null;
+function record(input: unknown): Record<string, unknown> | undefined {
+    return typeof input === 'object' && input !== null
+        ? (input as Record<string, unknown>)
+        : undefined;
 }
 
-function parsePoint(input: unknown): CurvePoint | null {
+function parsePoint(input: unknown): CurvePoint | undefined {
     const object = record(input);
-    if (object === null) return null;
+    if (object === undefined) return undefined;
     const { x, y } = object;
-    return typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && Number.isFinite(y) ? { x: clampCoord(x), y: clampCoord(y) } : null;
+    return typeof x === 'number' &&
+        typeof y === 'number' &&
+        Number.isFinite(x) &&
+        Number.isFinite(y)
+        ? { x: clampCoord(x), y: clampCoord(y) }
+        : undefined;
 }
 
-function parseCurve(input: unknown): Curve | null {
+function parseCurve(input: unknown): Curve | undefined {
     const object = record(input);
-    if (object === null) return null;
+    if (object === undefined) return undefined;
     const { label, notes, color, smooth } = object;
-    if (typeof label !== 'string' || typeof notes !== 'string' || typeof color !== 'string' || !COLOR_PATTERN.test(color) || (typeof smooth !== 'boolean') || !Array.isArray(object.points) || object.points.length < MIN_POINTS || object.points.length > MAX_POINTS) return null;
+    // The cheap `typeof` guards run first; the call/member checks follow once they are known safe.
+    if (
+        typeof label !== 'string' ||
+        typeof notes !== 'string' ||
+        typeof color !== 'string' ||
+        typeof smooth !== 'boolean' ||
+        !Array.isArray(object.points) ||
+        !COLOR_PATTERN.test(color) ||
+        object.points.length < MIN_POINTS ||
+        object.points.length > MAX_POINTS
+    )
+        return undefined;
 
     const points: CurvePoint[] = [];
     for (const rawPoint of object.points) {
         const point = parsePoint(rawPoint);
-        if (point === null) return null;
+        if (point === undefined) return undefined;
         points.push(point);
     }
     // Keep the invariant that points are sorted by ascending x.
     points.sort((a, b) => a.x - b.x);
 
-    const opacity = typeof object.opacity === 'number' ? clampOpacity(object.opacity) : DEFAULT_OPACITY;
-    if (object.colorCustom !== undefined && typeof object.colorCustom !== 'boolean') return null;
+    // Strict like every other field: an absent opacity is the documented default, but a present
+    // one of the wrong type rejects the payload instead of being silently repaired.
+    const rawOpacity = object.opacity;
+    if (rawOpacity !== undefined && typeof rawOpacity !== 'number') return undefined;
+    const opacity = rawOpacity === undefined ? DEFAULT_OPACITY : clampOpacity(rawOpacity);
+    if (object.colorCustom !== undefined && typeof object.colorCustom !== 'boolean')
+        return undefined;
     return {
         label,
         color: color.toLowerCase(),
-        ...((object.colorCustom === true) && { colorCustom: true }),
+        ...(object.colorCustom === true && { colorCustom: true }),
         notes,
         points,
         smooth,
@@ -235,42 +262,65 @@ function parseCurve(input: unknown): Curve | null {
     };
 }
 
-function parsePhase(input: unknown): Phase | null {
+function parsePhase(input: unknown): Phase | undefined {
     const object = record(input);
-    return (object === null) || (typeof object.label !== 'string') ? null : { label: object.label };
+    return object === undefined || typeof object.label !== 'string'
+        ? undefined
+        : { label: object.label };
 }
 
-function parseEvent(input: unknown): GraphEvent | null {
+function parseEvent(input: unknown): GraphEvent | undefined {
     const object = record(input);
-    if (object === null) return null;
+    if (object === undefined) return undefined;
     const { label, note, x } = object;
-    return typeof label === 'string' && typeof note === 'string' && typeof x === 'number' && Number.isFinite(x) ? { label, note, x: clampCoord(x) } : null;
+    return typeof label === 'string' &&
+        typeof note === 'string' &&
+        typeof x === 'number' &&
+        Number.isFinite(x)
+        ? { label, note, x: clampCoord(x) }
+        : undefined;
 }
 
 /**
  * Validate and sanitize unknown data (e.g. JSON decoded from the URL) into a GraphModel.
- * Returns null when the data cannot be interpreted as a model of the current version. Every
+ * Returns undefined when the data cannot be interpreted as a model of the current version. Every
  * field must be present with the right type — there are no lenient defaults, so a malformed
  * payload is rejected rather than silently repaired.
  */
-export function parseModel(input: unknown): GraphModel | null {
+export function parseModel(input: unknown): GraphModel | undefined {
     const object = record(input);
-    if (object === null) return null;
+    if (object === undefined) return undefined;
 
     const { title, yAxisTitle, numericAxis, phases, events, curves } = object;
-    if ((object.version !== MODEL_VERSION) || typeof title !== 'string' || typeof yAxisTitle !== 'string' || (typeof numericAxis !== 'boolean') || !Array.isArray(phases) || !Array.isArray(events) || !Array.isArray(curves) || phases.length < MIN_PHASES || phases.length > MAX_PHASES || events.length < MIN_EVENTS || events.length > MAX_EVENTS || curves.length < MIN_CURVES || curves.length > MAX_CURVES) return null;
+    // Cheap `typeof` guards first, then the version and array checks. `MIN_EVENTS` is 0, so an
+    // "at least" comparison on the event count can never fail and is deliberately absent.
+    if (
+        typeof title !== 'string' ||
+        typeof yAxisTitle !== 'string' ||
+        typeof numericAxis !== 'boolean' ||
+        object.version !== MODEL_VERSION ||
+        !Array.isArray(phases) ||
+        !Array.isArray(events) ||
+        !Array.isArray(curves) ||
+        phases.length < MIN_PHASES ||
+        phases.length > MAX_PHASES ||
+        events.length > MAX_EVENTS ||
+        curves.length < MIN_CURVES ||
+        curves.length > MAX_CURVES
+    )
+        return undefined;
 
     const parsedPhases: Phase[] = [];
     for (const rawPhase of phases) {
         const phase = parsePhase(rawPhase);
-        if (phase === null) return null;
+        if (phase === undefined) return undefined;
         parsedPhases.push(phase);
     }
 
     const parsedEvents: GraphEvent[] = [];
     for (const rawEvent of events) {
         const event = parseEvent(rawEvent);
-        if (event === null) return null;
+        if (event === undefined) return undefined;
         parsedEvents.push(event);
     }
     parsedEvents.sort((a, b) => a.x - b.x);
@@ -278,7 +328,7 @@ export function parseModel(input: unknown): GraphModel | null {
     const parsedCurves: Curve[] = [];
     for (const rawCurve of curves) {
         const curve = parseCurve(rawCurve);
-        if (curve === null) return null;
+        if (curve === undefined) return undefined;
         parsedCurves.push(curve);
     }
 
@@ -314,6 +364,8 @@ export function phasePositions(count: number): number[] {
 The phase tick x (0..100) nearest to `x`.
 */
 export function nearestPhaseX(x: number, count: number): number {
+    // No phases means no tick to snap to; the clamped coordinate is the honest answer.
+    if (count <= 0) return clampCoord(x);
     const positions = phasePositions(count);
     let best = positions[0];
     let bestDistance = Math.abs(x - best);
@@ -336,6 +388,8 @@ export function nearestPhaseX(x: number, count: number): number {
  * `phasePositions` centers. Rounded to stay within the 0..100 integer coordinate invariant.
  */
 export function phaseBoundaries(count: number): number[] {
+    // No phases means no boundaries. Without this guard the single boundary is `0 / 0` → NaN.
+    if (count <= 0) return [];
     const boundaries: number[] = [];
     for (let index = 0; index <= count; index++) {
         boundaries.push(Math.round((index / count) * 100));
@@ -347,6 +401,8 @@ export function phaseBoundaries(count: number): number[] {
 The phase-boundary x (0..100) nearest to `x`.
 */
 export function nearestBoundaryX(x: number, count: number): number {
+    // Same zero-phase case as `nearestPhaseX`: there is no edge to snap to.
+    if (count <= 0) return clampCoord(x);
     const boundaries = phaseBoundaries(count);
     let best = boundaries[0];
     let bestDistance = Math.abs(x - best);
@@ -376,20 +432,28 @@ Linear y between the points bracketing `x` (points must be sorted by x).
 */
 function interpolateY(points: CurvePoint[], x: number): number {
     if (points.length === 0) return 0;
-    if (x <= points[0].x) return points[0].y;
-    const last = points.at(-1);
-    if (x >= last.x) return last.y;
-    for (let index = 0; index < points.length - 1; index++) {
-        const a = points[index];
-        const b = points[index + 1];
-        if (x >= a.x && x <= b.x) {
-            const span = b.x - a.x;
-            if (span === 0) return a.y;
-            const t = (x - a.x) / span;
-            return Math.round(a.y + (b.y - a.y) * t);
+    let left = points[0];
+    if (x <= left.x) return left.y;
+    for (const right of points) {
+        if (x <= right.x) {
+            const span = right.x - left.x;
+            return span === 0
+                ? left.y
+                : Math.round(left.y + (right.y - left.y) * ((x - left.x) / span));
         }
+
+        left = right;
     }
-    return last.y;
+    // `x` is past the last point, so the last point's y is the answer.
+    return left.y;
+}
+
+/**
+The curve at `index`, or undefined when `index` is out of range. Returning the undefined makes the
+callers' guards necessary rather than redundant, and keeps them safe against a bad index.
+*/
+function curveAt(model: GraphModel, index: number): Curve | undefined {
+    return index >= 0 && index < model.curves.length ? model.curves[index] : undefined;
 }
 
 /**
@@ -407,7 +471,7 @@ export function newCurve(model: GraphModel, index: number): Curve {
         }
     }
     return {
-        label: `Curve ${index + 1}`,
+        label: `Curve ${String(index + 1)}`,
         color,
         notes: '',
         smooth: true,
@@ -433,13 +497,13 @@ export function canRemoveCurve(model: GraphModel): boolean {
 /**
 Append a new curve at the top of the stack.
 */
-export function addCurve(model: GraphModel): boolean {
+export function didAddCurve(model: GraphModel): boolean {
     if (!canAddCurve(model)) return false;
     model.curves.push(newCurve(model, model.curves.length));
     return true;
 }
 
-export function removeCurve(model: GraphModel, index: number): boolean {
+export function didRemoveCurve(model: GraphModel, index: number): boolean {
     if (!canRemoveCurve(model) || index < 0 || index >= model.curves.length) return false;
     model.curves.splice(index, 1);
     return true;
@@ -448,7 +512,7 @@ export function removeCurve(model: GraphModel, index: number): boolean {
 /**
 Move the curve at `from` to index `to` (changes paint order).
 */
-export function reorderCurve(model: GraphModel, from: number, to: number): boolean {
+export function didReorderCurve(model: GraphModel, from: number, to: number): boolean {
     if (from < 0 || from >= model.curves.length) return false;
     const target = Math.max(0, Math.min(model.curves.length - 1, to));
     if (target === from) return false;
@@ -457,8 +521,8 @@ export function reorderCurve(model: GraphModel, from: number, to: number): boole
     return true;
 }
 
-export function moveCurve(model: GraphModel, index: number, offset: -1 | 1): boolean {
-    return reorderCurve(model, index, index + offset);
+export function didMoveCurve(model: GraphModel, index: number, offset: -1 | 1): boolean {
+    return didReorderCurve(model, index, index + offset);
 }
 
 // --- Point operations --------------------------------------------------------
@@ -476,24 +540,30 @@ export function canRemovePoint(curve: Curve): boolean {
  * spline midpoint an insert handle sits on); without it, y is interpolated linearly from the
  * neighbouring points.
  */
-export function insertPoint(
+export function didInsertPoint(
     model: GraphModel,
     curveIndex: number,
     atX: number,
     atY?: number
 ): boolean {
-    const curve = model.curves[curveIndex];
+    const curve = curveAt(model, curveIndex);
     if (curve === undefined || !canAddPoint(curve)) return false;
     const x = clampCoord(atX);
-    const y = clampCoord(atY === undefined ? interpolateY(curve.points, x) : atY);
+    const y = clampCoord(atY ?? interpolateY(curve.points, x));
     curve.points.push({ x, y });
     sortPoints(curve.points);
     return true;
 }
 
-export function removePoint(model: GraphModel, curveIndex: number, pointIndex: number): boolean {
-    const curve = model.curves[curveIndex];
-    if (curve === undefined || !canRemovePoint(curve) || pointIndex < 0 || pointIndex >= curve.points.length) return false;
+export function didRemovePoint(model: GraphModel, curveIndex: number, pointIndex: number): boolean {
+    const curve = curveAt(model, curveIndex);
+    if (
+        curve === undefined ||
+        !canRemovePoint(curve) ||
+        pointIndex < 0 ||
+        pointIndex >= curve.points.length
+    )
+        return false;
     curve.points.splice(pointIndex, 1);
     return true;
 }
@@ -502,14 +572,14 @@ export function removePoint(model: GraphModel, curveIndex: number, pointIndex: n
  * Move a point (clamped to 0..100) and re-sort. The point object identity survives the re-sort,
  * so callers keep tracking the dragged point by reference.
  */
-export function setPoint(
+export function didSetPoint(
     model: GraphModel,
     curveIndex: number,
     point: CurvePoint,
     x: number,
     y: number
 ): boolean {
-    const curve = model.curves[curveIndex];
+    const curve = curveAt(model, curveIndex);
     if (!curve?.points.includes(point)) return false;
     point.x = clampCoord(x);
     point.y = clampCoord(y);
@@ -530,13 +600,13 @@ export function canRemovePhase(model: GraphModel): boolean {
 /**
 Append a phase at the right end of the axis.
 */
-export function addPhase(model: GraphModel): boolean {
+export function didAddPhase(model: GraphModel): boolean {
     if (!canAddPhase(model)) return false;
-    model.phases.push({ label: `Phase ${model.phases.length + 1}` });
+    model.phases.push({ label: `Phase ${String(model.phases.length + 1)}` });
     return true;
 }
 
-export function removePhase(model: GraphModel, index: number): boolean {
+export function didRemovePhase(model: GraphModel, index: number): boolean {
     if (!canRemovePhase(model) || index < 0 || index >= model.phases.length) return false;
     model.phases.splice(index, 1);
     return true;
@@ -546,7 +616,7 @@ export function removePhase(model: GraphModel, index: number): boolean {
  * Move the phase at `from` to index `to`. Tick positions are positional (evenly spaced by
  * index), so reordering swaps the labels only — curves are untouched.
  */
-export function reorderPhase(model: GraphModel, from: number, to: number): boolean {
+export function didReorderPhase(model: GraphModel, from: number, to: number): boolean {
     if (from < 0 || from >= model.phases.length) return false;
     const target = Math.max(0, Math.min(model.phases.length - 1, to));
     if (target === from) return false;
@@ -566,16 +636,20 @@ export function canRemoveEvent(model: GraphModel): boolean {
 }
 
 /** Append an event at the centre of the timeline; the caller drags it into place. Returns the
- *  new event (so the editor can locate it after the re-render) or null when the cap is reached. */
-export function addEvent(model: GraphModel): GraphEvent | null {
-    if (!canAddEvent(model)) return null;
-    const event: GraphEvent = { label: `Event ${model.events.length + 1}`, note: '', x: 50 };
+ *  new event (so the editor can locate it after the re-render) or undefined when the cap is reached. */
+export function addEvent(model: GraphModel): GraphEvent | undefined {
+    if (!canAddEvent(model)) return undefined;
+    const event: GraphEvent = {
+        label: `Event ${String(model.events.length + 1)}`,
+        note: '',
+        x: 50,
+    };
     model.events.push(event);
     model.events.sort((a, b) => a.x - b.x);
     return event;
 }
 
-export function removeEvent(model: GraphModel, index: number): boolean {
+export function didRemoveEvent(model: GraphModel, index: number): boolean {
     if (!canRemoveEvent(model) || index < 0 || index >= model.events.length) return false;
     model.events.splice(index, 1);
     return true;
@@ -585,7 +659,7 @@ export function removeEvent(model: GraphModel, index: number): boolean {
  * Move an event to a new x (clamped to 0..100) and re-sort. The event object identity survives the
  * re-sort, so a drag keeps tracking the same event by reference (mirrors `setPoint`).
  */
-export function setEventX(model: GraphModel, event: GraphEvent, x: number): boolean {
+export function didSetEventX(model: GraphModel, event: GraphEvent, x: number): boolean {
     if (!model.events.includes(event)) return false;
     event.x = clampCoord(x);
     model.events.sort((a, b) => a.x - b.x);

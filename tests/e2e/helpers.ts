@@ -55,7 +55,7 @@ Install localStorage values before any page script runs.
 export async function seedStorage(page: Page, storage: Record<string, string>): Promise<void> {
     await page.addInitScript((entries: Record<string, string>) => {
         for (const [key, value] of Object.entries(entries)) {
-            globalThis.localStorage.setItem(key, value);
+            localStorage.setItem(key, value);
         }
     }, storage);
 }
@@ -72,9 +72,14 @@ export async function seedStorage(page: Page, storage: Record<string, string>): 
 export async function spyOnClipboardWrites(page: Page): Promise<() => Promise<string[]>> {
     await page.addInitScript(() => {
         const written: string[] = [];
-        (globalThis as unknown as { __clipboardWrites: string[] }).__clipboardWrites = written;
+        // Defined rather than assigned: the spy is one named global that a later `evaluate` reads
+        // back, and the property it installs is exactly the `written` array the hook keeps pushing
+        // into — never a copy, so the reads see the writes.
+        Object.defineProperty(globalThis, '__clipboardWrites', { value: written });
 
-        const clipboard = navigator.clipboard;
+        // `navigator.clipboard` is typed as always present, but an insecure origin really has none —
+        // the widened type is restored here so the guard below stays meaningful.
+        const clipboard = (navigator as { clipboard?: Clipboard }).clipboard;
         if (clipboard === undefined) return;
 
         const original = clipboard.writeText.bind(clipboard);
@@ -124,7 +129,7 @@ export async function applyPreset(
  */
 export async function openHeaderMenu(page: Page, id: 'btn-style' | 'btn-share'): Promise<void> {
     await page.evaluate((elementId) => {
-        document.getElementById(elementId)?.click();
+        document.querySelector<HTMLElement>(`#${elementId}`)?.click();
     }, id);
 }
 
@@ -197,7 +202,7 @@ export async function clickRevealedBadge(
 The x of a control-point handle, in SVG user units.
 */
 export function handleX(page: Page, index: number): Promise<number> {
-    return numberAttribute(page, `.point-handle[data-handle-index="${index}"]`, 'cx');
+    return numberAttribute(page, `.point-handle[data-handle-index="${String(index)}"]`, 'cx');
 }
 
 /**
@@ -207,15 +212,17 @@ export function handleX(page: Page, index: number): Promise<number> {
  * walks the path until it finds a point where `elementFromPoint` resolves to the curve body itself.
  * Returns false if no such point exists.
  */
-export async function dragCurveBody(
+export async function isDragCurveBody(
     page: Page,
     curveIndex: number,
     delta: { x: number; y: number }
 ): Promise<boolean> {
     const start = await page.evaluate((index) => {
         const svg = document.querySelector<SVGSVGElement>('#graph-container svg.graph-svg');
-        const body = document.querySelector<SVGPathElement>(`[data-curve-move="${CSS.escape(index)}"]`);
-        if (svg === null || body === null) return null;
+        const body = document.querySelector<SVGPathElement>(
+            `[data-curve-move="${CSS.escape(String(index))}"]`
+        );
+        if (svg === null || body === null) return;
 
         const box = svg.getBoundingClientRect();
         const viewBox = svg.viewBox.baseVal;
@@ -230,16 +237,16 @@ export async function dragCurveBody(
             const hit = document.elementFromPoint(x, y);
             if (hit !== null && hit.closest('[data-curve-move]') !== null) return { x, y };
         }
-        return null;
+        return;
     }, curveIndex);
 
-    if (start === null) return false;
+    if (start === undefined) return false;
     await mouseDrag(page, start, delta);
     return true;
 }
 
 export function handleY(page: Page, index: number): Promise<number> {
-    return numberAttribute(page, `.point-handle[data-handle-index="${index}"]`, 'cy');
+    return numberAttribute(page, `.point-handle[data-handle-index="${String(index)}"]`, 'cy');
 }
 
 /**
@@ -248,7 +255,7 @@ export function handleY(page: Page, index: number): Promise<number> {
  * into the model.
  */
 export async function phaseLabelX(page: Page, index: number): Promise<number> {
-    return numberAttribute(page, `text[data-phase-index="${index}"]`, 'x');
+    return numberAttribute(page, `text[data-phase-index="${String(index)}"]`, 'x');
 }
 
 /**
@@ -264,8 +271,8 @@ function assertInsideViewport(page: Page, point: { x: number; y: number }, what:
     if (viewport === null) return;
     if (point.x < 0 || point.y < 0 || point.x > viewport.width || point.y > viewport.height) {
         throw new Error(
-            `${what} (${Math.round(point.x)}, ${Math.round(point.y)}) is outside the ` +
-                `${viewport.width}x${viewport.height} viewport`
+            `${what} (${String(Math.round(point.x))}, ${String(Math.round(point.y))}) is outside the ` +
+                `${String(viewport.width)}x${String(viewport.height)} viewport`
         );
     }
 }
@@ -292,12 +299,15 @@ export async function mouseDrag(
 /**
 Read a box until two consecutive reads agree, so an in-flight scroll animation cannot mislead us.
 */
-async function stableBox(page: Page, locator: Locator) {
-    let box = await locator.boundingBox();
+async function stableBox(
+    page: Page,
+    locator: Locator
+): Promise<{ x: number; y: number; width: number; height: number } | undefined> {
+    let box = (await locator.boundingBox()) ?? undefined;
     for (let attempt = 0; attempt < 20; attempt += 1) {
-        const next = await locator.boundingBox();
-        if (next === null) return null;
-        if (box !== null && next.x === box.x && next.y === box.y) return next;
+        const next = (await locator.boundingBox()) ?? undefined;
+        if (next === undefined) return;
+        if (box?.x === next.x && box.y === next.y) return next;
         box = next;
         await page.waitForTimeout(50);
     }
@@ -342,7 +352,7 @@ async function scrollIntoViewport(page: Page, locator: Locator): Promise<void> {
 export async function elementCentre(
     page: Page,
     selector: string,
-    offset: { x: number; y: number } = { x: 0, y: 0 }
+    offset?: { x: number; y: number }
 ): Promise<{ x: number; y: number }> {
     const locator = page.locator(selector).first();
 
@@ -350,11 +360,12 @@ export async function elementCentre(
     await scrollIntoViewport(page, locator);
 
     const box = await stableBox(page, locator);
-    if (box === null) throw new Error(`No bounding box for ${selector}`);
+    if (box === undefined) throw new Error(`No bounding box for ${selector}`);
 
+    const nudge = offset ?? { x: 0, y: 0 };
     const point = {
-        x: box.x + box.width / 2 + offset.x,
-        y: box.y + box.height / 2 + offset.y,
+        x: box.x + box.width / 2 + nudge.x,
+        y: box.y + box.height / 2 + nudge.y,
     };
     assertInsideViewport(page, point, `Cannot click ${selector}:`);
 
@@ -367,7 +378,7 @@ Click a graph element with raw mouse input (see the note at the top of this file
 export async function mouseClick(
     page: Page,
     selector: string,
-    offset: { x: number; y: number } = { x: 0, y: 0 }
+    offset?: { x: number; y: number }
 ): Promise<void> {
     const point = await elementCentre(page, selector, offset);
     await page.mouse.click(point.x, point.y);
@@ -383,19 +394,19 @@ export async function mouseClick(
 export async function curvePeakPoint(page: Page, index: number): Promise<{ x: number; y: number }> {
     const point = await page.evaluate((curveIndex) => {
         const path = document.querySelector<SVGPathElement>(
-            `#graph-container g.curves > g[data-curve-index="${CSS.escape(curveIndex)}"] .curve-line`
+            `#graph-container g.curves > g[data-curve-index="${CSS.escape(String(curveIndex))}"] .curve-line`
         );
-        const svg = path?.ownerSVGElement ?? null;
-        if (path === null || svg === null) return null;
+        const svg = path?.ownerSVGElement ?? undefined;
+        if (path === null || svg === undefined) return;
 
         const total = path.getTotalLength();
-        let peak: { x: number; y: number } | null = null;
+        let peak: { x: number; y: number } | undefined;
         for (let step = 0; step <= 60; step += 1) {
             const at = path.getPointAtLength((total * step) / 60);
             // Smallest y is highest on screen.
-            if (peak === null || at.y < peak.y) peak = { x: at.x, y: at.y };
+            if (peak === undefined || at.y < peak.y) peak = { x: at.x, y: at.y };
         }
-        if (peak === null) return null;
+        if (peak === undefined) return;
 
         const box = svg.getBoundingClientRect();
         const viewBox = svg.viewBox.baseVal;
@@ -408,7 +419,7 @@ export async function curvePeakPoint(page: Page, index: number): Promise<{ x: nu
         };
     }, index);
 
-    if (point === null) throw new Error(`Curve ${index} is not rendered`);
+    if (point === undefined) throw new Error(`Curve ${String(index)} is not rendered`);
     return point;
 }
 

@@ -93,7 +93,7 @@ export const classicStyle: GraphStyle = {
         haloWidth: 4,
     },
     frame: 'none',
-    sparkles: null,
+    sparkles: undefined,
     curves: { colorSource: 'data', palette: { light: PALETTE, dark: PALETTE } },
     layout: {
         plotWidth: 920,

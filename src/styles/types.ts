@@ -127,7 +127,7 @@ export interface StyleGradient {
     stops: string[];
 }
 
-export interface PatternDef {
+export interface PatternDefinition {
     name: PatternName;
     /**
     Default color for this pattern — e.g. a colored-pencil hue. Falls back to ink.
@@ -140,7 +140,7 @@ export interface StyleFills {
     'pattern' cycles `patterns` per curve; 'gradient' cycles `gradients` per curve.
     */
     mode: 'solid' | 'pattern' | 'gradient';
-    patterns: PatternDef[];
+    patterns: PatternDefinition[];
     /**
     Cycled per curve when mode='gradient' (each curve gets its own rainbow).
     */
@@ -283,7 +283,7 @@ export interface GraphStyle {
     jitter: StyleJitter;
     label: StyleLabelTreatment;
     frame: FrameMode;
-    sparkles?: StyleSparkles | null;
+    sparkles?: StyleSparkles;
     curves: {
         /**
          * 'data' honors each curve's stored color (classic — keeps old shared links and

@@ -18,9 +18,9 @@ async function focusedLabel(page: Page): Promise<string> {
         const element = document.activeElement as HTMLElement | null;
         return element === null ? '' : (
             element.id ||
-            element.getAttribute('aria-label') ||
-            element.getAttribute('title') ||
-            (element.textContent ?? '').trim().slice(0, 40) ||
+            (element.getAttribute('aria-label') ?? '') ||
+            (element.getAttribute('title') ?? '') ||
+            element.textContent.trim().slice(0, 40) ||
             element.tagName
         );
     });
@@ -63,25 +63,23 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
                 const element = document.activeElement as HTMLElement | null;
                 // The body is not a control — focus lands there when the browser moves focus out of
                 // the page, and it carries no indicator by design.
-                if (element === null || element.tagName === 'BODY') return null;
+                if (element === null || element.tagName === 'BODY') return;
                 const style = getComputedStyle(element);
+                // Computed `outline-width` is always a px length (`'2px'`, `'0px'`), and
+                // `Number('2px')` is `NaN` — so the unit comes off before the value is coerced.
+                const outlineWidth = Number(style.outlineWidth.replace('px', ''));
                 return {
-                    label: element.id || element.getAttribute('title') || element.tagName,
-                    visible: style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0,
+                    label: element.id || (element.getAttribute('title') ?? '') || element.tagName,
+                    visible: style.outlineStyle !== 'none' && outlineWidth > 0,
                 };
             });
-            if (result !== null && !result.visible) withoutIndicator.push(result.label);
+            if (result !== undefined && !result.visible) withoutIndicator.push(result.label);
         }
 
         expect(withoutIndicator).toEqual([]);
     });
 
     test('AA: every pointer target is at least 24x24', async ({ page }) => {
-        // KNOWN DEFECT — see ISSUES.md #10. Everything already clears 24x24 except the two toolbar
-        // checkboxes, which measure 22px tall. Expected failure keeps the suite green; fixing the
-        // CSS makes Playwright report an unexpected pass.
-        test.fail(true, 'the toolbar checkboxes are 22px tall — see ISSUES.md #10');
-
         await gotoApp(page);
 
         // Measured on the *clickable* element — the label wrapping a checkbox is the target, not the
@@ -104,8 +102,8 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
                     return {
                         label:
                             element.id ||
-                            element.getAttribute('title') ||
-                            (element.textContent ?? '').trim().slice(0, 30) ||
+                            (element.getAttribute('title') ?? '') ||
+                            element.textContent.trim().slice(0, 30) ||
                             element.tagName,
                         width: Math.round(box.width),
                         height: Math.round(box.height),
@@ -144,7 +142,7 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
                         element.getBoundingClientRect().height === 0 ||
                         element.getBoundingClientRect().width === 0
                 )
-                .map((element) => (element.textContent ?? '').trim().slice(0, 40));
+                .map((element) => element.textContent.trim().slice(0, 40));
         });
 
         expect(clipped).toEqual([]);
@@ -160,14 +158,15 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
         const unnamed = await page.evaluate(() =>
             [...document.querySelectorAll('button')]
                 .filter((button) => {
-                    const text = (button.textContent ?? '').trim();
+                    const text = button.textContent.trim();
                     // A button with readable text names itself; a glyph or emoji does not.
-                    return /^[a-z0-9]/i.test(text) ? false : (
+                    return (
+                        !/^[a-z0-9]/i.test(text) &&
                         (button.getAttribute('aria-label') ?? '') === '' &&
                         (button.getAttribute('title') ?? '') === ''
                     );
                 })
-                .map((button) => (button.textContent ?? '').trim())
+                .map((button) => button.textContent.trim())
         );
 
         expect(unnamed).toEqual([]);
@@ -224,10 +223,9 @@ test.describe('REQ-13 accessibility: WCAG 2.2 Level AA', () => {
             const found: string[] = [];
             for (const selector of selectors) {
                 for (const element of document.querySelectorAll(selector)) {
-                    const text = (element.textContent ?? '').trim();
-                    if (text === '') continue;
+                    const text = element.textContent.trim();
                     // Casing is only a problem when there are letters to case.
-                    if (!/[a-z]/i.test(text)) continue;
+                    if (text === '' || !/[a-z]/i.test(text)) continue;
                     if (text === text.toUpperCase())
                         found.push(`${selector}: ${text.slice(0, 40)}`);
                     const transform = getComputedStyle(element).textTransform;

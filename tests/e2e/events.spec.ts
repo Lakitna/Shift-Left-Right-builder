@@ -52,10 +52,11 @@ test.describe('REQ-07 events (moments in time)', () => {
             const xs = lines
                 .map((line) => Number(line.getAttribute('x1')))
                 .filter((value) => Number.isFinite(value))
-                .sort((a, b) => a - b);
+                .toSorted((a, b) => a - b);
             if (xs.length < 2) return xs;
             const step = xs[1] - xs[0];
-            return [xs[0] - step, ...xs, xs.at(-1) + step];
+            const last = xs.at(-1);
+            return last === undefined ? xs : [xs[0] - step, ...xs, last + step];
         });
         expect(boundaries.length).toBeGreaterThan(0);
 

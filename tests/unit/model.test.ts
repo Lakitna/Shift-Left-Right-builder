@@ -20,9 +20,7 @@ import {
     MIN_POINTS,
     MODEL_VERSION,
     PALETTE,
-    addCurve,
     addEvent,
-    addPhase,
     canAddCurve,
     canAddEvent,
     canAddPhase,
@@ -34,22 +32,24 @@ import {
     clampCoord,
     clampOpacity,
     cloneModel,
-    insertPoint,
-    moveCurve,
+    didAddCurve,
+    didAddPhase,
+    didInsertPoint,
+    didMoveCurve,
+    didRemoveCurve,
+    didRemoveEvent,
+    didRemovePhase,
+    didRemovePoint,
+    didReorderCurve,
+    didReorderPhase,
+    didSetEventX,
+    didSetPoint,
     nearestBoundaryX,
     nearestPhaseX,
     newCurve,
     parseModel,
     phaseBoundaries,
     phasePositions,
-    removeCurve,
-    removeEvent,
-    removePhase,
-    removePoint,
-    reorderCurve,
-    reorderPhase,
-    setEventX,
-    setPoint,
     type GraphModel,
 } from '../../src/model';
 import { makeCurve, makeEvent, makeModel, makePhase, makeRawModel } from './fixtures';
@@ -70,7 +70,7 @@ describe('REQ-01 model contract: clampCoord', () => {
     it('maps non-finite values to 0', () => {
         expect(clampCoord(NaN)).toBe(0);
         expect(clampCoord(Infinity)).toBe(0);
-        expect(clampCoord(Number.NEGATIVE_INFINITY)).toBe(0);
+        expect(clampCoord(-Infinity)).toBe(0);
     });
 });
 
@@ -84,7 +84,7 @@ describe('REQ-01 model contract: clampOpacity', () => {
 
     it('falls back to the default opacity for non-finite input', () => {
         expect(clampOpacity(NaN)).toBe(DEFAULT_OPACITY);
-        expect(clampOpacity(Number.NEGATIVE_INFINITY)).toBe(DEFAULT_OPACITY);
+        expect(clampOpacity(-Infinity)).toBe(DEFAULT_OPACITY);
     });
 });
 
@@ -132,69 +132,70 @@ describe('REQ-01 model contract: cloneModel', () => {
 describe('REQ-01 model contract: parseModel is strict', () => {
     it('accepts a valid model and reports the current version', () => {
         const parsed = parseModel(makeModel());
-        expect(parsed).not.toBeNull();
+        expect(parsed).toBeDefined();
         expect(parsed?.version).toBe(MODEL_VERSION);
     });
 
     it('rejects non-objects', () => {
-        for (const value of [null, undefined, 42, 'model', []]) {
-            expect(parseModel(value)).toBeNull();
+        const nullValue: unknown = JSON.parse('null');
+        for (const value of [nullValue, undefined, 42, 'model', []]) {
+            expect(parseModel(value)).toBeUndefined();
         }
     });
 
     it('rejects a version mismatch', () => {
         const raw = makeRawModel();
         raw.version = MODEL_VERSION + 1;
-        expect(parseModel(raw)).toBeNull();
+        expect(parseModel(raw)).toBeUndefined();
     });
 
     it('requires title and yAxisTitle to be present strings', () => {
         const noTitle = makeRawModel();
         delete noTitle.title;
-        expect(parseModel(noTitle)).toBeNull();
+        expect(parseModel(noTitle)).toBeUndefined();
 
         const badY = makeRawModel();
         badY.yAxisTitle = 7;
-        expect(parseModel(badY)).toBeNull();
+        expect(parseModel(badY)).toBeUndefined();
     });
 
     it('requires events to be present', () => {
         const raw = makeRawModel();
         delete raw.events;
-        expect(parseModel(raw)).toBeNull();
+        expect(parseModel(raw)).toBeUndefined();
     });
 
     it('enforces the array bounds', () => {
         const noCurves = makeRawModel();
         noCurves.curves = [];
-        expect(parseModel(noCurves)).toBeNull();
+        expect(parseModel(noCurves)).toBeUndefined();
 
         const tooManyPhases = makeRawModel();
         tooManyPhases.phases = Array.from({ length: MAX_PHASES + 1 }, () => makePhase());
-        expect(parseModel(tooManyPhases)).toBeNull();
+        expect(parseModel(tooManyPhases)).toBeUndefined();
 
         const tooManyEvents = makeRawModel();
         tooManyEvents.events = Array.from({ length: MAX_EVENTS + 1 }, () => makeEvent());
-        expect(parseModel(tooManyEvents)).toBeNull();
+        expect(parseModel(tooManyEvents)).toBeUndefined();
     });
 
     it('enforces the curve point count bounds', () => {
         const tooFew = makeRawModel();
         (tooFew.curves as Record<string, unknown>[])[0].points = [{ x: 0, y: 0 }];
-        expect(parseModel(tooFew)).toBeNull();
+        expect(parseModel(tooFew)).toBeUndefined();
 
         const tooMany = makeRawModel();
         (tooMany.curves as Record<string, unknown>[])[0].points = Array.from(
             { length: MAX_POINTS + 1 },
             (_, index) => ({ x: index, y: 0 })
         );
-        expect(parseModel(tooMany)).toBeNull();
+        expect(parseModel(tooMany)).toBeUndefined();
     });
 
     it('rejects a curve color that is not #rrggbb and lower-cases a valid one', () => {
         const bad = makeRawModel();
         (bad.curves as Record<string, unknown>[])[0].color = 'red';
-        expect(parseModel(bad)).toBeNull();
+        expect(parseModel(bad)).toBeUndefined();
 
         const upper = makeRawModel();
         (upper.curves as Record<string, unknown>[])[0].color = '#ABC123';
@@ -204,7 +205,7 @@ describe('REQ-01 model contract: parseModel is strict', () => {
     it('rejects a present-but-non-boolean colorCustom', () => {
         const raw = makeRawModel();
         (raw.curves as Record<string, unknown>[])[0].colorCustom = 'yes';
-        expect(parseModel(raw)).toBeNull();
+        expect(parseModel(raw)).toBeUndefined();
     });
 
     it('clamps coordinates and re-sorts points by ascending x', () => {
@@ -237,7 +238,7 @@ describe('REQ-01 model contract: parseModel is strict', () => {
     it('rejects a present-but-non-numeric opacity', () => {
         const raw = makeRawModel();
         (raw.curves as Record<string, unknown>[])[0].opacity = '0.5';
-        expect(parseModel(raw)).toBeNull();
+        expect(parseModel(raw)).toBeUndefined();
     });
 });
 
@@ -302,10 +303,10 @@ describe('REQ-05 curve operations', () => {
         expect(newCurve(sandwiched, 1).color).toBe(PALETTE[2]);
     });
 
-    it('addCurve appends while below the cap and refuses at it', () => {
+    it('didAddCurve appends while below the cap and refuses at it', () => {
         const model = makeModel({ curves: [makeCurve()] });
         expect(canAddCurve(model)).toBe(true);
-        expect(addCurve(model)).toBe(true);
+        expect(didAddCurve(model)).toBe(true);
         expect(model.curves).toHaveLength(2);
         expect(model.curves[1].label).toBe('Curve 2');
 
@@ -313,7 +314,7 @@ describe('REQ-05 curve operations', () => {
             curves: Array.from({ length: MAX_CURVES }, () => makeCurve()),
         });
         expect(canAddCurve(full)).toBe(false);
-        expect(addCurve(full)).toBe(false);
+        expect(didAddCurve(full)).toBe(false);
         expect(full.curves).toHaveLength(MAX_CURVES);
     });
 
@@ -321,19 +322,19 @@ describe('REQ-05 curve operations', () => {
         const model = makeModel({ curves: [makeCurve()] });
         expect(model.curves).toHaveLength(MIN_CURVES);
         expect(canRemoveCurve(model)).toBe(false);
-        expect(removeCurve(model, 0)).toBe(false);
+        expect(didRemoveCurve(model, 0)).toBe(false);
         expect(model.curves).toHaveLength(MIN_CURVES);
     });
 
-    it('removeCurve rejects an out-of-range index', () => {
+    it('didRemoveCurve rejects an out-of-range index', () => {
         const model = makeModel({ curves: [makeCurve(), makeCurve()] });
-        expect(removeCurve(model, 5)).toBe(false);
-        expect(removeCurve(model, -1)).toBe(false);
-        expect(removeCurve(model, 1)).toBe(true);
+        expect(didRemoveCurve(model, 5)).toBe(false);
+        expect(didRemoveCurve(model, -1)).toBe(false);
+        expect(didRemoveCurve(model, 1)).toBe(true);
         expect(model.curves).toHaveLength(1);
     });
 
-    it('reorderCurve moves a curve and refuses no-op or out-of-range moves', () => {
+    it('didReorderCurve moves a curve and refuses no-op or out-of-range moves', () => {
         const model = makeModel({
             curves: [
                 makeCurve({ label: 'A' }),
@@ -342,25 +343,25 @@ describe('REQ-05 curve operations', () => {
             ],
         });
 
-        expect(reorderCurve(model, 5, 0)).toBe(false);
-        expect(reorderCurve(model, 0, 0)).toBe(false);
+        expect(didReorderCurve(model, 5, 0)).toBe(false);
+        expect(didReorderCurve(model, 0, 0)).toBe(false);
         // A target that clamps back onto `from` is a no-op, not a move.
-        expect(reorderCurve(model, 2, 99)).toBe(false);
+        expect(didReorderCurve(model, 2, 99)).toBe(false);
 
-        expect(reorderCurve(model, 0, 2)).toBe(true);
+        expect(didReorderCurve(model, 0, 2)).toBe(true);
         expect(model.curves.map((curve) => curve.label)).toEqual(['B', 'C', 'A']);
 
         // The target index is clamped into range rather than rejected.
-        expect(reorderCurve(model, 0, 99)).toBe(true);
+        expect(didReorderCurve(model, 0, 99)).toBe(true);
         expect(model.curves.map((curve) => curve.label)).toEqual(['C', 'A', 'B']);
     });
 
-    it('moveCurve delegates to reorderCurve and reports a no-op at the edge', () => {
+    it('didMoveCurve delegates to didReorderCurve and reports a no-op at the edge', () => {
         const model = makeModel({
             curves: [makeCurve({ label: 'A' }), makeCurve({ label: 'B' })],
         });
-        expect(moveCurve(model, 0, -1)).toBe(false);
-        expect(moveCurve(model, 0, 1)).toBe(true);
+        expect(didMoveCurve(model, 0, -1)).toBe(false);
+        expect(didMoveCurve(model, 0, 1)).toBe(true);
         expect(model.curves.map((curve) => curve.label)).toEqual(['B', 'A']);
     });
 });
@@ -379,21 +380,17 @@ describe('REQ-05 point operations', () => {
                 })
             )
         ).toBe(false);
-        expect(
-            canAddPoint(
-                makeCurve({
-                    points: Array.from({ length: MAX_POINTS }, (_, index) => ({
-                        x: index,
-                        y: 0,
-                    })),
-                })
-            )
-        ).toBe(false);
+
+        const fullPoints = Array.from({ length: MAX_POINTS }, (_, index) => ({
+            x: index,
+            y: 0,
+        }));
+        expect(canAddPoint(makeCurve({ points: fullPoints }))).toBe(false);
     });
 
-    it('insertPoint interpolates y from the neighbouring points when no y is given', () => {
+    it('didInsertPoint interpolates y from the neighbouring points when no y is given', () => {
         const model = makeModel();
-        expect(insertPoint(model, 0, 25)).toBe(true);
+        expect(didInsertPoint(model, 0, 25)).toBe(true);
         expect(model.curves[0].points).toEqual([
             { x: 0, y: 0 },
             { x: 25, y: 25 },
@@ -402,16 +399,16 @@ describe('REQ-05 point operations', () => {
         ]);
     });
 
-    it('insertPoint respects an explicit y and clamps x', () => {
+    it('didInsertPoint respects an explicit y and clamps x', () => {
         const model = makeModel();
-        expect(insertPoint(model, 0, -40, 300)).toBe(true);
+        expect(didInsertPoint(model, 0, -40, 300)).toBe(true);
         expect(model.curves[0].points).toContainEqual({ x: 0, y: 100 });
         expect(model.curves[0].points).toHaveLength(4);
     });
 
-    it('insertPoint refuses a missing curve or a full curve', () => {
+    it('didInsertPoint refuses a missing curve or a full curve', () => {
         const model = makeModel();
-        expect(insertPoint(model, 9, 10)).toBe(false);
+        expect(didInsertPoint(model, 9, 10)).toBe(false);
 
         const full = makeModel({
             curves: [
@@ -423,13 +420,13 @@ describe('REQ-05 point operations', () => {
                 }),
             ],
         });
-        expect(insertPoint(full, 0, 10)).toBe(false);
+        expect(didInsertPoint(full, 0, 10)).toBe(false);
     });
 
-    it('removePoint refuses to drop below the minimum and rejects bad indexes', () => {
+    it('didRemovePoint refuses to drop below the minimum and rejects bad indexes', () => {
         const model = makeModel();
-        expect(removePoint(model, 0, 5)).toBe(false);
-        expect(removePoint(model, 9, 0)).toBe(false);
+        expect(didRemovePoint(model, 0, 5)).toBe(false);
+        expect(didRemovePoint(model, 9, 0)).toBe(false);
 
         const atMinimum = makeModel({
             curves: [
@@ -442,17 +439,17 @@ describe('REQ-05 point operations', () => {
             ],
         });
         expect(canRemovePoint(atMinimum.curves[0])).toBe(false);
-        expect(removePoint(atMinimum, 0, 0)).toBe(false);
+        expect(didRemovePoint(atMinimum, 0, 0)).toBe(false);
 
-        expect(removePoint(model, 0, 1)).toBe(true);
+        expect(didRemovePoint(model, 0, 1)).toBe(true);
         expect(model.curves[0].points).toHaveLength(2);
     });
 
-    it('setPoint clamps, re-sorts and keeps the dragged identity', () => {
+    it('didSetPoint clamps, re-sorts and keeps the dragged identity', () => {
         const model = makeModel();
         const dragged = model.curves[0].points[1];
 
-        expect(setPoint(model, 0, dragged, 90, 10)).toBe(true);
+        expect(didSetPoint(model, 0, dragged, 90, 10)).toBe(true);
         expect(dragged.x).toBe(90);
         expect(dragged.y).toBe(10);
         // Identity survives the re-sort, so an in-flight drag keeps tracking the same point.
@@ -460,53 +457,53 @@ describe('REQ-05 point operations', () => {
         expect(model.curves[0].points.map((point) => point.x)).toEqual([0, 90, 100]);
     });
 
-    it('setPoint clamps out-of-range coordinates and rejects a foreign point', () => {
+    it('didSetPoint clamps out-of-range coordinates and rejects a foreign point', () => {
         const model = makeModel();
         const dragged = model.curves[0].points[0];
-        expect(setPoint(model, 0, dragged, -10, 500)).toBe(true);
+        expect(didSetPoint(model, 0, dragged, -10, 500)).toBe(true);
         expect(dragged).toEqual({ x: 0, y: 100 });
 
         const stranger = { x: 1, y: 1 };
-        expect(setPoint(model, 0, stranger, 10, 10)).toBe(false);
-        expect(setPoint(model, 9, dragged, 10, 10)).toBe(false);
+        expect(didSetPoint(model, 0, stranger, 10, 10)).toBe(false);
+        expect(didSetPoint(model, 9, dragged, 10, 10)).toBe(false);
     });
 });
 
 describe('REQ-06 phase operations', () => {
-    it('addPhase appends with a positional label and refuses at the cap', () => {
+    it('didAddPhase appends with a positional label and refuses at the cap', () => {
         const model = makeModel();
         expect(canAddPhase(model)).toBe(true);
-        expect(addPhase(model)).toBe(true);
-        expect(model.phases.at(-1).label).toBe('Phase 4');
+        expect(didAddPhase(model)).toBe(true);
+        expect(model.phases.at(-1)?.label).toBe('Phase 4');
 
         const full = makeModel({
             phases: Array.from({ length: MAX_PHASES }, () => makePhase()),
             curves: [makeCurve()],
         });
         expect(canAddPhase(full)).toBe(false);
-        expect(addPhase(full)).toBe(false);
+        expect(didAddPhase(full)).toBe(false);
     });
 
-    it('removePhase keeps at least one phase and rejects bad indexes', () => {
+    it('didRemovePhase keeps at least one phase and rejects bad indexes', () => {
         const model = makeModel();
-        expect(removePhase(model, 9)).toBe(false);
-        expect(removePhase(model, 0)).toBe(true);
+        expect(didRemovePhase(model, 9)).toBe(false);
+        expect(didRemovePhase(model, 0)).toBe(true);
         expect(model.phases).toHaveLength(2);
 
         const single = makeModel({ phases: [makePhase()] });
         expect(canRemovePhase(single)).toBe(false);
-        expect(removePhase(single, 0)).toBe(false);
+        expect(didRemovePhase(single, 0)).toBe(false);
         expect(single.phases).toHaveLength(MIN_PHASES);
     });
 
-    it('reorderPhase moves labels and refuses no-op moves', () => {
+    it('didReorderPhase moves labels and refuses no-op moves', () => {
         const model = makeModel({
             phases: [makePhase('A'), makePhase('B'), makePhase('C')],
         });
-        expect(reorderPhase(model, 0, 0)).toBe(false);
-        expect(reorderPhase(model, 9, 0)).toBe(false);
+        expect(didReorderPhase(model, 0, 0)).toBe(false);
+        expect(didReorderPhase(model, 9, 0)).toBe(false);
 
-        expect(reorderPhase(model, 2, 0)).toBe(true);
+        expect(didReorderPhase(model, 2, 0)).toBe(true);
         expect(model.phases.map((phase) => phase.label)).toEqual(['C', 'A', 'B']);
     });
 });
@@ -518,49 +515,49 @@ describe('REQ-07 event operations', () => {
         });
 
         const created = addEvent(model);
-        expect(created).not.toBeNull();
+        expect(created).toBeDefined();
         expect(created).toEqual({ label: 'Event 2', note: '', x: 50 });
         expect(model.events.map((event) => event.label)).toEqual(['Event 2', 'late']);
         // The returned reference is the same object that landed in the model.
         expect(model.events[0]).toBe(created);
     });
 
-    it('addEvent returns null at the cap', () => {
+    it('addEvent returns undefined at the cap', () => {
         const model = makeModel({
             events: Array.from({ length: MAX_EVENTS }, () => makeEvent()),
         });
         expect(canAddEvent(model)).toBe(false);
-        expect(addEvent(model)).toBeNull();
+        expect(addEvent(model)).toBeUndefined();
         expect(model.events).toHaveLength(MAX_EVENTS);
     });
 
-    it('removeEvent respects the minimum and rejects bad indexes', () => {
+    it('didRemoveEvent respects the minimum and rejects bad indexes', () => {
         const model = makeModel({ events: [makeEvent()] });
-        expect(removeEvent(model, 0)).toBe(true);
+        expect(didRemoveEvent(model, 0)).toBe(true);
         expect(model.events).toHaveLength(0);
         expect(canRemoveEvent(model)).toBe(false);
-        expect(removeEvent(model, 0)).toBe(false);
+        expect(didRemoveEvent(model, 0)).toBe(false);
     });
 
-    it('setEventX clamps, re-sorts and keeps the dragged identity', () => {
+    it('didSetEventX clamps, re-sorts and keeps the dragged identity', () => {
         const model = makeModel({
             events: [makeEvent({ label: 'a', x: 10 }), makeEvent({ label: 'b', x: 80 })],
         });
         const dragged = model.events[0];
 
-        expect(setEventX(model, dragged, 200)).toBe(true);
+        expect(didSetEventX(model, dragged, 200)).toBe(true);
         expect(dragged.x).toBe(100);
         expect(model.events.map((event) => event.label)).toEqual(['b', 'a']);
         expect(model.events[1]).toBe(dragged);
     });
 
-    it('setEventX rejects an event that is not in the model', () => {
+    it('didSetEventX rejects an event that is not in the model', () => {
         const model = makeModel({ events: [makeEvent()] });
-        expect(setEventX(model, makeEvent({ x: 5 }), 5)).toBe(false);
+        expect(didSetEventX(model, makeEvent({ x: 5 }), 5)).toBe(false);
     });
 
     it('keeps a model with no events valid', () => {
         const model: GraphModel = makeModel({ events: [] });
-        expect(parseModel(JSON.parse(JSON.stringify(model)))).not.toBeNull();
+        expect(parseModel(structuredClone(model))).toBeDefined();
     });
 });

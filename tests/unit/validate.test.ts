@@ -72,7 +72,8 @@ describe('REQ-03 validateStyle gating', () => {
     it('flags curve fills below 3:1 when solid fills carry the curve boundaries', () => {
         const issues = validateStyle(syntheticStyle(), false);
         expect(issues).toHaveLength(2);
-        expect(issues.map((issue) => issue.theme).sort()).toEqual(['dark', 'light']);
+        const themes = issues.map((issue) => issue.theme).toSorted((a, b) => a.localeCompare(b));
+        expect(themes).toEqual(['dark', 'light']);
         for (const issue of issues) {
             expect(issue.required).toBe(3);
             expect(issue.ratio).toBe(1);
@@ -135,7 +136,7 @@ function textContrastViolations(
                 const ratio = contrastRatio(pair.fg, pair.bg);
                 if (ratio < wanted) {
                     violations.push(
-                        `${style.id}/${theme}: ${pair.what} is ${ratio.toFixed(2)}:1, needs ${wanted}:1`
+                        `${style.id}/${theme}: ${pair.what} is ${ratio.toFixed(2)}:1, needs ${String(wanted)}:1`
                     );
                 }
             }

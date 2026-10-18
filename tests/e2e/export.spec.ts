@@ -27,13 +27,16 @@ async function downloadFrom(page: Page, kind: 'png' | 'svg'): Promise<Download> 
 }
 
 async function downloadedBytes(download: Download): Promise<Buffer> {
-    const path = await download.path();
+    // `download.path()` is typed as always present, but a failed download has no path — the widened
+    // type is restored here so the guard below stays meaningful.
+    const path = (await download.path()) as string | null;
     if (path === null) throw new Error('the download has no local path');
     return readFile(path);
 }
 
 async function downloadedText(download: Download): Promise<string> {
-    return (await downloadedBytes(download)).toString('utf8');
+    const bytes = await downloadedBytes(download);
+    return bytes.toString('utf8');
 }
 
 /**
@@ -177,12 +180,6 @@ test.describe('REQ-12 export dialogs', () => {
     });
 
     test('exports a PNG of exactly the size the dialog promises', async ({ page }) => {
-        // KNOWN DEFECT — see ISSUES.md #9. `measurePngSheet` measures the layout without the
-        // attribution strip that the real export adds (18 sheet pixels, ~10 at this width), so the
-        // height the dialog advertises is always short. Encoded as an expected failure so the suite
-        // stays green; Playwright reports an unexpected pass when it is fixed.
-        test.fail(true, 'the PNG size hint omits the attribution strip — see ISSUES.md #9');
-
         await gotoApp(page);
         await openDialog(page, 'png');
         await page.locator('#png-width').fill('600');

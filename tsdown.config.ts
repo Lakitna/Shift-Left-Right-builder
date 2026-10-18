@@ -8,13 +8,13 @@ import { defineConfig } from 'tsdown';
  * Registered on tsdown's `build:done` hook, which fires after the bundle is
  * written and the copied files are on disk — in build and watch mode alike.
  */
-async function minifyStaticAssets(dir = 'dist/web') {
-    const cssPath = `${dir}/styles.css`;
+async function minifyStaticAssets(directory = 'dist/web') {
+    const cssPath = `${directory}/styles.css`;
     await writeFile(
         cssPath,
         new CleanCSS({ level: 1 }).minify(await readFile(cssPath, 'utf8')).styles
     );
-    const htmlPath = `${dir}/index.html`;
+    const htmlPath = `${directory}/index.html`;
     await writeFile(
         htmlPath,
         await minifyHtml(await readFile(htmlPath, 'utf8'), {

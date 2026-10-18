@@ -4,9 +4,9 @@ Usage: node scripts/serve-web.mjs [port]
 */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, resolve, sep } from 'node:path';
+import path from 'node:path';
 
-const root = resolve('dist/web');
+const root = path.resolve('dist/web');
 const port = Number(process.argv[2] ?? 8080);
 
 const contentTypes = {
@@ -22,17 +22,17 @@ const contentTypes = {
 createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    const filePath = join(root, requested);
+    const filePath = path.join(root, requested);
 
     // Prevent path traversal outside the served folder
-    if (!filePath.startsWith(root + sep) && filePath !== root) {
+    if (filePath !== root && !filePath.startsWith(root + path.sep)) {
         response.writeHead(403).end('Forbidden');
         return;
     }
 
     try {
         const data = await readFile(filePath);
-        const type = contentTypes[extname(filePath)] ?? 'application/octet-stream';
+        const type = contentTypes[path.extname(filePath)] ?? 'application/octet-stream';
         // Dev server: always serve the freshly built files. Content-hashed assets (fonts)
         // can be served with long-cache headers — exactly what a production static host
         // should do for them.

@@ -4,7 +4,7 @@
 
 export const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export function svgEl<Tag extends keyof SVGElementTagNameMap>(
+export function svgElement<Tag extends keyof SVGElementTagNameMap>(
     tag: Tag,
     attributes: Record<string, string | number>
 ): SVGElementTagNameMap[Tag] {
@@ -15,8 +15,11 @@ export function svgEl<Tag extends keyof SVGElementTagNameMap>(
     return element;
 }
 
-export function textEl(content: string, attributes: Record<string, string | number>): SVGTextElement {
-    const element = svgEl('text', attributes);
+export function textElement(
+    content: string,
+    attributes: Record<string, string | number>
+): SVGTextElement {
+    const element = svgElement('text', attributes);
     element.textContent = content;
     return element;
 }
@@ -36,9 +39,9 @@ export function removeBadge(
     palette: { background: string; legendSwatchStroke: string; phaseLabel: string },
     attributes: Record<string, string | number>
 ): SVGGElement {
-    const group = svgEl('g', attributes);
+    const group = svgElement('g', attributes);
     group.append(
-        svgEl('circle', {
+        svgElement('circle', {
             cx,
             cy,
             r: radius,
@@ -48,7 +51,7 @@ export function removeBadge(
         })
     );
     group.append(
-        textEl('✕', {
+        textElement('✕', {
             x: cx,
             y: cy + textOffset,
             'text-anchor': 'middle',
@@ -69,12 +72,12 @@ export function addBadge(
     color: string,
     attributes: Record<string, string | number>
 ): SVGGElement {
-    const group = svgEl('g', attributes);
+    const group = svgElement('g', attributes);
     group.append(
-        svgEl('circle', { cx, cy, r: 9, fill: '#ffffff', stroke: color, 'stroke-width': 2 })
+        svgElement('circle', { cx, cy, r: 9, fill: '#ffffff', stroke: color, 'stroke-width': 2 })
     );
     group.append(
-        textEl('+', {
+        textElement('+', {
             x: cx,
             y: cy + 4,
             'text-anchor': 'middle',

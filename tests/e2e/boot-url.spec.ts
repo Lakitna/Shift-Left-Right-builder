@@ -126,10 +126,13 @@ test.describe('REQ-11 sharing via URL', () => {
 
         // Chromium can read the real clipboard back; Firefox cannot be granted `clipboard-read`, so
         // there it is what the app handed to the clipboard API.
-        const copied =
-            browserName === 'chromium'
-                ? await page.evaluate(() => navigator.clipboard.readText())
-                : (await readClipboardWrites())[0];
+        let copied: string;
+        if (browserName === 'chromium') {
+            copied = await page.evaluate(() => navigator.clipboard.readText());
+        } else {
+            const writes = await readClipboardWrites();
+            copied = writes[0];
+        }
 
         expect(copied, 'copy link wrote nothing to the clipboard').toBeDefined();
         expect(copied).toContain('#p=');

@@ -12,7 +12,7 @@
  * hit-test without duplicating math.
  */
 
-import { addBadge, removeBadge, SVG_NS, svgEl as svgElement, textEl as textElement } from './dom';
+import { addBadge, removeBadge, SVG_NS, svgElement, textElement } from './dom';
 import {
     MAX_CURVES,
     MAX_EVENTS,
@@ -23,7 +23,7 @@ import {
     type GraphEvent,
     type GraphModel,
 } from './model';
-import { getActiveStyle } from './styleState';
+import { getActiveStyle } from './style-state';
 import type {
     CanvasPalette,
     GraphStyle,
@@ -81,7 +81,9 @@ export function calloutAnchor(
     const half = maxWidth / 2;
     const pad = 4;
     if (gateX < plotX0 + half) return { anchor: 'start', textX: gateX + pad };
-    return gateX > plotX1 - half ? { anchor: 'end', textX: gateX - pad } : { anchor: 'middle', textX: gateX };
+    return gateX > plotX1 - half
+        ? { anchor: 'end', textX: gateX - pad }
+        : { anchor: 'middle', textX: gateX };
 }
 
 /**
@@ -154,17 +156,29 @@ const round = (n: number): number => Math.round(n * 100) / 100;
 
 // --- Text measurement --------------------------------------------------------
 
-let measureContext: CanvasRenderingContext2D | null | undefined;
+/**
+ * Lazily created 2D context reused for text measurement. Creating the canvas is DOM work, so it is
+ * deferred until the first measurement; a browser without a 2D context caches `null` so it is only
+ * asked once. The context lives in a closure because module-level state must not be reassigned from
+ * inside a function.
+ */
+const getMeasureContext = (() => {
+    let context: CanvasRenderingContext2D | null | undefined;
+    return (): CanvasRenderingContext2D | null | undefined => {
+        if (context === undefined) {
+            context = document.createElement('canvas').getContext('2d');
+        }
+        return context;
+    };
+})();
 
 function textWidth(text: string, font: string): number {
-    if (measureContext === undefined) {
-        measureContext = document.createElement('canvas').getContext('2d');
-    }
-    if (measureContext === null) {
+    const context = getMeasureContext();
+    if (context === null || context === undefined) {
         return text.length * 8;
     }
-    measureContext.font = font;
-    return measureContext.measureText(text).width;
+    context.font = font;
+    return context.measureText(text).width;
 }
 
 /**
@@ -172,7 +186,9 @@ The role's primary family (when set) followed by the style's fallback stack.
 */
 function fontStack(style: GraphStyle, role: StyleRole): string {
     const r = style.typography.roles[role];
-    return r.family === '' ? style.typography.fallback : `${r.family}, ${style.typography.fallback}`;
+    return r.family === ''
+        ? style.typography.fallback
+        : `${r.family}, ${style.typography.fallback}`;
 }
 
 /**
@@ -180,7 +196,7 @@ Canvas `measureText`-compatible font spec for a role.
 */
 function fontSpec(style: GraphStyle, role: StyleRole): string {
     const r = style.typography.roles[role];
-    return `${r.weight} ${r.size}px ${fontStack(style, role)}`;
+    return `${String(r.weight)} ${String(r.size)}px ${fontStack(style, role)}`;
 }
 
 /**
@@ -204,7 +220,8 @@ function wrapText(text: string, maxWidth: number, font: string): string[] {
             lines.push(current);
             current = '';
         };
-        for (const word of paragraph.split(/\s+/).filter((w) => w !== '')) {
+        const words = paragraph.split(/\s+/).filter((w) => w !== '');
+        for (const word of words) {
             const candidate = current === '' ? word : current + ' ' + word;
             if (textWidth(candidate, font) <= maxWidth) {
                 current = candidate;
@@ -235,10 +252,12 @@ function wrapText(text: string, maxWidth: number, font: string): string[] {
 
 function mulberry32(a: number): () => number {
     return () => {
-        a |= 0;
-        a = (a + 0x6D_2B_79_F5) | 0;
+        // `a` is only ever read through 32-bit bitwise operators below, so truncating here (instead
+        // of wrapping to int32) produces exactly the same stream.
+        a = Math.trunc(a);
+        a = Math.trunc(a + 0x6D_2B_79_F5);
         let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
         return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
     };
 }
@@ -266,8 +285,10 @@ function smoothNoise(seed: number): (t: number) => number {
     const phases = waves.map(() => rand() * Math.PI * 2);
     const norm = waves.reduce((sum, w) => sum + w.a, 0);
     return (t) =>
-        waves.reduce((sum, w, index) => sum + w.a * Math.sin(2 * Math.PI * w.f * t + phases[index]), 0) /
-        norm;
+        waves.reduce(
+            (sum, w, index) => sum + w.a * Math.sin(2 * Math.PI * w.f * t + phases[index]),
+            0
+        ) / norm;
 }
 
 // --- Fills --------------------------------------------------------------------
@@ -278,7 +299,7 @@ export interface CurvePattern {
 }
 
 /**
- * The hatch this curve shows (name + effective color), or null when the curve is not
+ * The hatch this curve shows (name + effective color), or undefined when the curve is not
  * pattern-filled. Color: the style pattern's pencil color, falling back to ink. A curve
  * with a custom picked color is always solid — the hatch cycle skips it.
  */
@@ -287,29 +308,29 @@ export function effectiveCurvePattern(
     curve: Curve,
     index: number,
     ink: string
-): CurvePattern | null {
-    if (curve.colorCustom === true) return null;
+): CurvePattern | undefined {
+    if (curve.colorCustom === true) return undefined;
     if (style.fills.mode === 'pattern') {
         const entry = style.fills.patterns[index % style.fills.patterns.length];
         return { name: entry.name, color: entry.color ?? ink };
     }
-    return null;
+    return undefined;
 }
 
 /**
-The gradient this curve shows, or null when it is not a gradient fill.
+The gradient this curve shows, or undefined when it is not a gradient fill.
 */
 export function effectiveCurveGradient(
     style: GraphStyle,
     curve: Curve,
     index: number
-): StyleGradient | null {
-    if (curve.colorCustom === true) return null;
+): StyleGradient | undefined {
+    if (curve.colorCustom === true) return undefined;
     if (style.fills.mode === 'gradient') {
         const gradients = style.fills.gradients ?? [];
-        return gradients.length === 0 ? null : gradients[index % gradients.length];
+        return gradients.length === 0 ? undefined : gradients[index % gradients.length];
     }
-    return null;
+    return undefined;
 }
 
 /**
@@ -322,18 +343,18 @@ export function effectiveCurveFill(
     style: GraphStyle,
     curve: Curve,
     index: number,
-    dark: boolean
+    isDark: boolean
 ): string {
     if (curve.colorCustom === true || style.curves.colorSource === 'data') return curve.color;
-    const ink = (dark ? style.canvas.dark : style.canvas.light).ink;
+    const ink = (isDark ? style.canvas.dark : style.canvas.light).ink;
     const pattern = effectiveCurvePattern(style, curve, index, ink);
-    if (pattern !== null) {
-        return pattern.name === 'none' ? 'none' : `url(#graph-pat-${index})`;
+    if (pattern !== undefined) {
+        return pattern.name === 'none' ? 'none' : `url(#graph-pat-${String(index)})`;
     }
-    if (effectiveCurveGradient(style, curve, index) !== null) {
-        return `url(#graph-grad-${index})`;
+    if (effectiveCurveGradient(style, curve, index) !== undefined) {
+        return `url(#graph-grad-${String(index)})`;
     }
-    const palette = dark ? style.curves.palette.dark : style.curves.palette.light;
+    const palette = isDark ? style.curves.palette.dark : style.curves.palette.light;
     return palette[index % palette.length] ?? curve.color;
 }
 
@@ -345,10 +366,10 @@ export function effectiveCurveSwatchColor(
     style: GraphStyle,
     curve: Curve,
     index: number,
-    dark: boolean
+    isDark: boolean
 ): string {
     if (curve.colorCustom === true || style.curves.colorSource === 'data') return curve.color;
-    const palette = dark ? style.curves.palette.dark : style.curves.palette.light;
+    const palette = isDark ? style.curves.palette.dark : style.curves.palette.light;
     return palette[index % palette.length] ?? curve.color;
 }
 
@@ -381,17 +402,28 @@ function patternElement(
             })
         );
     } else {
-        const d45 = `M0 ${s} L${s} 0 M${-s / 2} ${s / 2} L${s / 2} ${-s / 2} M${s / 2} ${s * 1.5} L${s * 1.5} ${s / 2}`;
-        const d135 = `M0 0 L${s} ${s} M${-s / 2} ${s / 2} L${s / 2} ${s * 1.5} M${s / 2} ${-s / 2} L${s * 1.5} ${s / 2}`;
-        const dH = `M0 ${s / 2} L${s} ${s / 2}`;
-        const d =
-            name === 'diag45'
-                ? d45
-                : name === 'diag-45'
-                  ? d135
-                  : name === 'cross'
-                    ? `${d45} ${d135}`
-                    : dH;
+        const spacing = String(s);
+        const halfNeg = String(-s / 2);
+        const halfPos = String(s / 2);
+        const oneAndHalf = String(s * 1.5);
+        const d45 = `M0 ${spacing} L${spacing} 0 M${halfNeg} ${halfPos} L${halfPos} ${halfNeg} M${halfPos} ${oneAndHalf} L${oneAndHalf} ${halfPos}`;
+        const d135 = `M0 0 L${spacing} ${spacing} M${halfNeg} ${halfPos} L${halfPos} ${oneAndHalf} M${halfPos} ${halfNeg} L${oneAndHalf} ${halfPos}`;
+        const dH = `M0 ${halfPos} L${spacing} ${halfPos}`;
+        let d = dH;
+        switch (name) {
+            case 'diag45': {
+                d = d45;
+                break;
+            }
+            case 'diag-45': {
+                d = d135;
+                break;
+            }
+            case 'cross': {
+                d = `${d45} ${d135}`;
+                break;
+            }
+        }
         pattern.append(
             svgElement('path', { d, stroke: color, 'stroke-width': w, opacity: op, fill: 'none' })
         );
@@ -402,40 +434,38 @@ function patternElement(
 /**
 Pattern AND gradient defs are PER CURVE (ids graph-pat-{i} / graph-grad-{i}).
 */
-function fillDefs(style: GraphStyle, ink: string, model: GraphModel): SVGDefsElement | null {
+function fillDefs(style: GraphStyle, ink: string, model: GraphModel): SVGDefsElement | undefined {
     const defs = svgElement('defs', {});
     let isAny = false;
     for (const [index, curve] of model.curves.entries()) {
         const pattern = effectiveCurvePattern(style, curve, index, ink);
-        if (pattern !== null && pattern.name !== 'none') {
+        if (pattern !== undefined && pattern.name !== 'none') {
             isAny = true;
             defs.append(
-                patternElement(`graph-pat-${index}`, pattern.name, pattern.color, style.fills)
+                patternElement(`graph-pat-${String(index)}`, pattern.name, pattern.color, style.fills)
             );
         }
         const gradient = effectiveCurveGradient(style, curve, index);
-        if (gradient !== null) {
-            isAny = true;
-            const grad = svgElement('linearGradient', {
-                id: `graph-grad-${index}`,
-                x1: '0%',
-                y1: '0%',
-                x2: '100%',
-                y2: '100%',
-            });
-            for (const [stopIndex, color] of gradient.stops.entries()) {
-                const offset =
-                    gradient.stops.length === 1
-                        ? 0
-                        : (stopIndex / (gradient.stops.length - 1)) * 100;
-                grad.append(
-                    svgElement('stop', { offset: `${Math.round(offset)}%`, 'stop-color': color })
-                );
-            }
-            defs.append(grad);
+        if (gradient === undefined) continue;
+        isAny = true;
+        const grad = svgElement('linearGradient', {
+            id: `graph-grad-${String(index)}`,
+            x1: '0%',
+            y1: '0%',
+            x2: '100%',
+            y2: '100%',
+        });
+        for (const [stopIndex, color] of gradient.stops.entries()) {
+            const offset =
+                gradient.stops.length === 1
+                    ? 0
+                    : (stopIndex / (gradient.stops.length - 1)) * 100;
+            const offsetPercent = `${String(Math.round(offset))}%`;
+            grad.append(svgElement('stop', { offset: offsetPercent, 'stop-color': color }));
         }
+        defs.append(grad);
     }
-    return isAny ? defs : null;
+    return isAny ? defs : undefined;
 }
 
 // --- Layout ------------------------------------------------------------------
@@ -523,7 +553,7 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
 
     let cursor = legendTop;
     const legendRows: LegendRow[] = isIncludeLegend
-        ? [...model.curves.keys()].reverse().map((curveIndex) => {
+        ? model.curves.keys().toArray().toReversed().map((curveIndex) => {
               const curve = model.curves[curveIndex];
               const noteLines = wrapText(curve.notes, legendWidth, noteFont);
               const height = labelLineH + noteLines.length * noteLineH + L.legendRowGap;
@@ -575,18 +605,18 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
 // --- Curve geometry ----------------------------------------------------------
 
 function sortedPoints(curve: Curve): CurvePoint[] {
-    return [...curve.points].sort((a, b) => a.x - b.x);
+    return curve.points.toSorted((a, b) => a.x - b.x);
 }
 
 /**
 The top-line commands (after the initial M) for points already in pixel space.
 */
-function topLineCommands(pts: Pt[], smooth: boolean): string {
+function topLineCommands(pts: Pt[], isSmooth: boolean): string {
     if (pts.length < 2) return '';
-    if (!smooth) {
+    if (!isSmooth) {
         let d = '';
         for (let index = 1; index < pts.length; index++) {
-            d += `L${round(pts[index].x)},${round(pts[index].y)}`;
+            d += `L${String(round(pts[index].x))},${String(round(pts[index].y))}`;
         }
         return d;
     }
@@ -601,7 +631,7 @@ function topLineCommands(pts: Pt[], smooth: boolean): string {
         const c1y = p1.y + (p2.y - p0.y) / 6;
         const c2x = p2.x - (p3.x - p1.x) / 6;
         const c2y = p2.y - (p3.y - p1.y) / 6;
-        d += `C${round(c1x)},${round(c1y)} ${round(c2x)},${round(c2y)} ${round(p2.x)},${round(p2.y)}`;
+        d += `C${String(round(c1x))},${String(round(c1y))} ${String(round(c2x))},${String(round(c2y))} ${String(round(p2.x))},${String(round(p2.y))}`;
     }
     return d;
 }
@@ -620,7 +650,7 @@ function cubicAt(a: Pt, c1: Pt, c2: Pt, b: Pt, t: number): Pt {
  * Catmull-Rom beziers (the same control points `topLineCommands` draws), straight ones
  * along their chords.
  */
-function denseTopPoints(pts: Pt[], smooth: boolean, segmentLength: number): Pt[] {
+function denseTopPoints(pts: Pt[], isSmooth: boolean, segmentLength: number): Pt[] {
     if (pts.length < 2) return pts;
     const out: Pt[] = [pts[0]];
     for (let index = 0; index < pts.length - 1; index++) {
@@ -630,7 +660,7 @@ function denseTopPoints(pts: Pt[], smooth: boolean, segmentLength: number): Pt[]
         const p3 = pts[Math.min(index + 2, pts.length - 1)];
         const length = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const steps = Math.max(2, Math.round(length / segmentLength));
-        if (!smooth) {
+        if (!isSmooth) {
             for (let k = 1; k <= steps; k++) {
                 const t = k / steps;
                 out.push({ x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t });
@@ -652,21 +682,28 @@ function denseTopPoints(pts: Pt[], smooth: boolean, segmentLength: number): Pt[]
  * instead of per-point sawtooth.
  */
 function jitterPoints(pts: Pt[], jitter: StyleJitter, saltExtra: number): Pt[] {
-    if (pts.length < 2) return pts;
+    const last = pts.at(-1);
+    if (last === undefined || pts.length < 2) return pts;
     const cum: number[] = [0];
     for (let index = 1; index < pts.length; index++) {
-        cum.push(cum[index - 1] + Math.hypot(pts[index].x - pts[index - 1].x, pts[index].y - pts[index - 1].y));
+        cum.push(
+            cum[index - 1] +
+                Math.hypot(pts[index].x - pts[index - 1].x, pts[index].y - pts[index - 1].y)
+        );
     }
-    const total = cum.at(-1) || 1;
-    const noise = smoothNoise(
-        hashNumbers([
-            jitter.salt,
-            saltExtra,
-            Math.round(pts[0].x * 2),
-            Math.round(pts.at(-1).x * 2),
-            Math.round(pts[0].y * 2),
-        ])
-    );
+    const lastCum = cum.at(-1);
+    // Treat a missing or zero-length total (every point at the same spot) as 1 so the ratio below
+    // never divides by zero.
+    const total = lastCum === undefined || lastCum === 0 ? 1 : lastCum;
+    const first = pts[0];
+    const seed = hashNumbers([
+        jitter.salt,
+        saltExtra,
+        Math.round(first.x * 2),
+        Math.round(last.x * 2),
+        Math.round(first.y * 2),
+    ]);
+    const noise = smoothNoise(seed);
     return pts.map((p, index) => {
         const previous = pts[Math.max(index - 1, 0)];
         const next = pts[Math.min(index + 1, pts.length - 1)];
@@ -686,28 +723,38 @@ function jitterPoints(pts: Pt[], jitter: StyleJitter, saltExtra: number): Pt[] {
 function curveTopEdge(
     curve: Curve,
     geom: GraphGeom
-): { start: Pt; end: Pt; commands: string } | null {
+): { start: Pt; end: Pt; commands: string } | undefined {
     const style = geom.style;
     const pts = sortedPoints(curve).map((p) => geom.toPx(p.x, p.y));
-    if (pts.length === 0) return null;
+    const last = pts.at(-1);
+    if (last === undefined) return undefined;
     if (style.jitter.amplitude <= 0) {
         return {
             start: pts[0],
-            end: pts.at(-1),
+            end: last,
             commands: topLineCommands(pts, curve.smooth),
         };
     }
     const dense = denseTopPoints(pts, curve.smooth, style.jitter.segmentLength);
     const wob = jitterPoints(dense, style.jitter, pts.length);
+    const wobLast = wob.at(-1);
+    if (wobLast === undefined) return undefined;
     return {
         start: wob[0],
-        end: wob.at(-1),
+        end: wobLast,
         commands: wob
             .slice(1)
-            .map((p) => `L${round(p.x)},${round(p.y)}`)
+            .map((p) => `L${String(round(p.x))},${String(round(p.y))}`)
             .join(''),
     };
 }
+
+/**
+ * B(0.5) of the cubic bezier with control points `c1`/`c2` between `p1` and `p2` — the same control
+ * points `topLineCommands` draws, so the midpoint lands on the visible line.
+ */
+const atMid = (p1: number, c1: number, c2: number, p2: number): number =>
+    (p1 + 3 * c1 + 3 * c2 + p2) / 8;
 
 /**
  * The point halfway along the drawn curve between control points `index` and `index+1`, in
@@ -721,9 +768,6 @@ export function segmentMidpoint(curve: Curve, index: number): CurvePoint {
     if (!curve.smooth) return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     const p0 = pts[Math.max(index - 1, 0)];
     const p3 = pts[Math.min(index + 2, pts.length - 1)];
-    // Same bezier control points as topLineCommands; B(0.5) = (P0 + 3P1 + 3P2 + P3) / 8.
-    const atMid = (p1: number, c1: number, c2: number, p2: number): number =>
-        (p1 + 3 * c1 + 3 * c2 + p2) / 8;
     return {
         x: atMid(a.x, a.x + (b.x - p0.x) / 6, b.x - (p3.x - a.x) / 6, b.x),
         y: atMid(a.y, a.y + (b.y - p0.y) / 6, b.y - (p3.y - a.y) / 6, b.y),
@@ -735,7 +779,9 @@ Open path along the curve's top edge (jittered when the style asks for it).
 */
 export function curveLinePath(curve: Curve, geom: GraphGeom): string {
     const edge = curveTopEdge(curve, geom);
-    return edge === null ? '' : `M${round(edge.start.x)},${round(edge.start.y)}${edge.commands}`;
+    return edge === undefined
+        ? ''
+        : `M${String(round(edge.start.x))},${String(round(edge.start.y))}${edge.commands}`;
 }
 
 /**
@@ -743,21 +789,21 @@ Closed path: the top edge filled down to the baseline.
 */
 export function curveAreaPath(curve: Curve, geom: GraphGeom): string {
     const edge = curveTopEdge(curve, geom);
-    return edge === null ? '' : (
-        `M${round(edge.start.x)},${round(geom.baselineY)} L${round(edge.start.x)},${round(edge.start.y)}` +
-        edge.commands +
-        ` L${round(edge.end.x)},${round(geom.baselineY)} Z`
-    );
+    return edge === undefined
+        ? ''
+        : `M${String(round(edge.start.x))},${String(round(geom.baselineY))} L${String(round(edge.start.x))},${String(round(edge.start.y))}` +
+              edge.commands +
+              ` L${String(round(edge.end.x))},${String(round(geom.baselineY))} Z`;
 }
 
 export function pointPx(point: CurvePoint, geom: GraphGeom): Pt {
     return geom.toPx(point.x, point.y);
 }
 
-function peakPoint(curve: Curve): CurvePoint | null {
-    let best: CurvePoint | null = null;
+function peakPoint(curve: Curve): CurvePoint | undefined {
+    let best: CurvePoint | undefined;
     for (const point of curve.points) {
-        if (best === null || point.y > best.y) best = point;
+        if (best === undefined || point.y > best.y) best = point;
     }
     return best;
 }
@@ -906,10 +952,10 @@ Four-point sparkle star centered on (cx, cy) with arm length s.
 function sparkleStar(cx: number, cy: number, s: number): string {
     const k = s * 0.22;
     return (
-        `M${round(cx)} ${round(cy - s)} L${round(cx + k)} ${round(cy - k)} ` +
-        `L${round(cx + s)} ${round(cy)} L${round(cx + k)} ${round(cy + k)} ` +
-        `L${round(cx)} ${round(cy + s)} L${round(cx - k)} ${round(cy + k)} ` +
-        `L${round(cx - s)} ${round(cy)} L${round(cx - k)} ${round(cy - k)} Z`
+        `M${String(round(cx))} ${String(round(cy - s))} L${String(round(cx + k))} ${String(round(cy - k))} ` +
+        `L${String(round(cx + s))} ${String(round(cy))} L${String(round(cx + k))} ${String(round(cy + k))} ` +
+        `L${String(round(cx))} ${String(round(cy + s))} L${String(round(cx - k))} ${String(round(cy + k))} ` +
+        `L${String(round(cx - s))} ${String(round(cy))} L${String(round(cx - k))} ${String(round(cy - k))} Z`
     );
 }
 
@@ -929,7 +975,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
 
     const svg = svgElement('svg', {
         xmlns: SVG_NS,
-        viewBox: `0 0 ${round(geom.width)} ${round(geom.height)}`,
+        viewBox: `0 0 ${String(round(geom.width))} ${String(round(geom.height))}`,
         width: round(geom.width),
         height: round(geom.height),
         class: 'graph-svg',
@@ -937,7 +983,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     svg.setAttribute('font-family', style.typography.fallback);
 
     const defs = fillDefs(style, palette.ink, model);
-    if (defs !== null) svg.append(defs);
+    if (defs !== undefined) svg.append(defs);
 
     if (!options.transparentBackground) {
         svg.append(
@@ -1052,14 +1098,11 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         const tipY = y2 + dy * 10;
         const px = -dy; // perpendicular
         const py = dx;
-        axes.append(
-            svgElement('polygon', {
-                points: `${round(x2 + px * 5)},${round(y2 + py * 5)} ${round(tipX)},${round(
-                    tipY
-                )} ${round(x2 - px * 5)},${round(y2 - py * 5)}`,
-                fill: palette.axis,
-            })
-        );
+        const points =
+            `${String(round(x2 + px * 5))},${String(round(y2 + py * 5))} ` +
+            `${String(round(tipX))},${String(round(tipY))} ` +
+            `${String(round(x2 - px * 5))},${String(round(y2 - py * 5))}`;
+        axes.append(svgElement('polygon', { points, fill: palette.axis }));
     }
 
     if (model.numericAxis) {
@@ -1117,7 +1160,8 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
 
     // Phase separators: faint vertical lines on the BOUNDARIES between adjacent bands — the same
     // edges events snap to — instead of at the band centres, and none at the plot's outer edges.
-    for (const boundary of phaseBoundaries(model.phases.length).slice(1, -1)) {
+    const separators = phaseBoundaries(model.phases.length).slice(1, -1);
+    for (const boundary of separators) {
         const bx = geom.toPx(boundary, 0).x;
         grid.append(
             svgElement('line', {
@@ -1179,6 +1223,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     const yTitlePad = (R.axisTitle.size + 6) / 2 + 2;
     const yTitleX = round((model.numericAxis ? tickGutter : L.margin.left - 8) - yTitlePad);
     const yTitleY = (geom.plotY0 + geom.baselineY) / 2;
+    const yTitleTransform = `rotate(-90 ${String(yTitleX)} ${String(round(yTitleY))})`;
     if (yTitle !== '') {
         axes.append(
             textElement(yTitle, {
@@ -1189,7 +1234,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'font-size': R.axisTitle.size,
                 'font-weight': R.axisTitle.weight,
                 'font-family': fontStack(style, 'axisTitle'),
-                transform: `rotate(-90 ${yTitleX} ${round(yTitleY)})`,
+                transform: yTitleTransform,
                 'data-edit-field': 'yaxis',
             })
         );
@@ -1197,7 +1242,9 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         // The hint's rotated text grows left from its baseline, so anchor the baseline near the
         // gutter edge instead of centring it on `yTitleX` — otherwise half the band falls off the
         // canvas and the field looks unclickable.
-        const hintBaseline = round(model.numericAxis ? L.margin.left - 10 - R.tickLabel.size - 2 : L.margin.left - 10);
+        const hintBaseline = round(
+            model.numericAxis ? L.margin.left - 10 - R.tickLabel.size - 2 : L.margin.left - 10
+        );
         const hint = svgElement('g', { 'data-edit-field': 'yaxis', class: 'empty-hint' });
         hint.append(
             svgElement('rect', {
@@ -1234,8 +1281,12 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         );
         // Styles with an ink outline draw the top edge in ink (toon seams, de-stijl rules,
         // draftsman technical lines); otherwise the line follows the fill color.
-        const lineColor =
-            style.stroke.curveOutline > 0 ? palette.ink : (fillValue.startsWith('#') ? fillValue : curve.color);
+        let lineColor = curve.color;
+        if (style.stroke.curveOutline > 0) {
+            lineColor = palette.ink;
+        } else if (fillValue.startsWith('#')) {
+            lineColor = fillValue;
+        }
         const lineWidth =
             style.stroke.curveOutline > 0 ? style.stroke.curveOutline : style.curveStrokeWidth;
         group.append(
@@ -1269,9 +1320,9 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // In-plot curve labels at each peak, in the style's label treatment.
     const labelsGroup = svgElement('g', { class: 'curve-labels' });
     for (const [index, curve] of model.curves.entries()) {
-        const label = (curve.label ?? '').trim();
+        const label = curve.label.trim();
         const peak = peakPoint(curve);
-        if (peak === null) continue;
+        if (peak === undefined) continue;
         const p = geom.toPx(peak.x, peak.y);
         let ty = p.y - 12;
         if (ty < geom.plotY0 + 14) ty = p.y + 20;
@@ -1312,13 +1363,14 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
             })
         );
         const dm = 5;
+        const points =
+            `${String(round(px))},${String(round(geom.baselineY - dm))} ` +
+            `${String(round(px + dm))},${String(round(geom.baselineY))} ` +
+            `${String(round(px))},${String(round(geom.baselineY + dm))} ` +
+            `${String(round(px - dm))},${String(round(geom.baselineY))}`;
         axes.append(
             svgElement('polygon', {
-                points: `${round(px)},${round(geom.baselineY - dm)} ${round(px + dm)},${round(
-                    geom.baselineY
-                )} ${round(px)},${round(geom.baselineY + dm)} ${round(px - dm)},${round(
-                    geom.baselineY
-                )}`,
+                points,
                 fill: palette.eventLine,
                 stroke: palette.background,
                 'stroke-width': 1,
@@ -1329,8 +1381,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
         );
 
         const group = svgElement('g', { class: 'event-group' });
-        const blockBottom =
-            geom.eventNoteTop + callout.noteLines.length * R.eventNote.lineHeight;
+        const blockBottom = geom.eventNoteTop + callout.noteLines.length * R.eventNote.lineHeight;
         group.append(
             svgElement('line', {
                 x1: round(px),
@@ -1343,7 +1394,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'none',
             })
         );
-        const label = (event.label ?? '').trim();
+        const label = event.label.trim();
         if (label !== '') {
             group.append(
                 textElement(label, {
@@ -1411,7 +1462,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     const legendGroup = svgElement('g', { class: 'legend' });
     const labelLineH = R.legendLabel.size + 6;
     const noteLineH = R.legendNote.lineHeight;
-    const displayOrder = [...model.curves.keys()].reverse();
+    const displayOrder = model.curves.keys().toArray().toReversed();
     for (const [slot, row] of geom.legendRows.entries()) {
         const curveIndex = displayOrder[slot];
         const curve = model.curves[curveIndex];
@@ -1501,9 +1552,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 })
             );
         } else if (options.editing) {
-            block.append(
-                dashedHintLine(textX, textX + 120, row.top + labelLineH - 6, palette)
-            );
+            block.append(dashedHintLine(textX, textX + 120, row.top + labelLineH - 6, palette));
         }
         // Notes get no placeholder: the wrapped note lines would otherwise show a long dash rule.
         if (row.noteLines.length > 0) {
@@ -1511,9 +1560,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 block.append(
                     textElement(line, {
                         x: round(textX),
-                        y: round(
-                            row.top + labelLineH + index * noteLineH + R.legendNote.size
-                        ),
+                        y: round(row.top + labelLineH + index * noteLineH + R.legendNote.size),
                         fill: palette.legendMuted,
                         'font-size': R.legendNote.size,
                         'font-weight': R.legendNote.weight,
@@ -1529,9 +1576,9 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // WYSIWYG "add curve": a dashed placeholder row at the bottom of the legend, in place of the
     // old toolbar button. Clicking it appends a curve and immediately selects its label for typing.
     if (options.editing && model.curves.length < MAX_CURVES) {
-        const addRow = svgElement('g', { class: 'legend-add', 'data-curve-add': 1 });
+        const placeholderRow = svgElement('g', { class: 'legend-add', 'data-curve-add': 1 });
         const textX = geom.legendX + L.legendRemoveZone;
-        addRow.append(
+        placeholderRow.append(
             svgElement('rect', {
                 x: round(geom.legendX),
                 y: round(geom.legendBottom),
@@ -1543,7 +1590,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'all',
             })
         );
-        addRow.append(
+        placeholderRow.append(
             textElement('+ Add curve', {
                 x: round(textX),
                 y: round(geom.legendBottom + R.legendLabel.size - 2),
@@ -1554,7 +1601,7 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
                 'pointer-events': 'none',
             })
         );
-        legendGroup.append(addRow);
+        legendGroup.append(placeholderRow);
     }
 
     svg.append(legendGroup);

@@ -8,7 +8,7 @@
 import { embeddedFontFaceCss } from './fonts';
 import type { GraphModel } from './model';
 import { computeLayout, renderGraphSvg, serializeSvg } from './render';
-import { getActiveStyle } from './styleState';
+import { getActiveStyle } from './style-state';
 
 function triggerDownload(objectUrl: string, filename: string): void {
     const anchor = document.createElement('a');
@@ -17,7 +17,9 @@ function triggerDownload(objectUrl: string, filename: string): void {
     document.body.append(anchor);
     anchor.click();
     anchor.remove();
-    globalThis.setTimeout(() => { URL.revokeObjectURL(objectUrl); }, 2000);
+    globalThis.setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+    }, 2000);
 }
 
 export interface SvgExportOptions {
@@ -73,17 +75,17 @@ interface PngSheet {
 
 async function buildPngSheet(
     model: GraphModel,
-    dark: boolean,
-    transparent: boolean,
-    includeLegend: boolean
+    isDark: boolean,
+    isTransparent: boolean,
+    shouldIncludeLegend: boolean
 ): Promise<PngSheet> {
     const style = getActiveStyle();
     const { svg, geom } = renderGraphSvg(model, {
         style,
-        dark,
+        dark: isDark,
         attribution: true,
-        transparentBackground: transparent,
-        includeLegend,
+        transparentBackground: isTransparent,
+        includeLegend: shouldIncludeLegend,
     });
     return {
         svgString: serializeSvg(svg, {
@@ -96,15 +98,19 @@ async function buildPngSheet(
 
 async function rasterizeSheet(
     sheet: PngSheet,
-    dark: boolean,
-    transparent: boolean,
+    isDark: boolean,
+    isTransparent: boolean,
     scale: number
 ): Promise<Blob> {
     const image = new Image();
     const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(sheet.svgString);
     await new Promise<void>((resolve, reject) => {
-        image.addEventListener('load', () => { resolve(); });
-        image.onerror = () => { reject(new Error('Could not rasterize the graph SVG')); };
+        image.addEventListener('load', () => {
+            resolve();
+        });
+        image.addEventListener('error', () => {
+            reject(new Error('Could not rasterize the graph SVG'));
+        });
         image.src = dataUrl;
     });
 
@@ -115,14 +121,16 @@ async function rasterizeSheet(
     if (context === null) {
         throw new Error('Canvas 2D rendering context is not available');
     }
-    if (!transparent) {
+    if (!isTransparent) {
         const style = getActiveStyle();
-        context.fillStyle = (dark ? style.canvas.dark : style.canvas.light).background;
+        context.fillStyle = (isDark ? style.canvas.dark : style.canvas.light).background;
         context.fillRect(0, 0, canvas.width, canvas.height);
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const blob = await new Promise<Blob | null>((resolve) => { canvas.toBlob(resolve, 'image/png'); });
+    const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/png');
+    });
     if (blob === null) {
         throw new Error('Could not encode the graph as PNG');
     }
@@ -130,7 +138,12 @@ async function rasterizeSheet(
 }
 
 export async function exportPng(model: GraphModel, options: PngExportOptions): Promise<void> {
-    const sheet = await buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
+    const sheet = await buildPngSheet(
+        model,
+        options.dark,
+        options.transparent,
+        options.includeLegend
+    );
     const blob = await rasterizeSheet(sheet, options.dark, options.transparent, options.scale);
     triggerDownload(URL.createObjectURL(blob), options.filename);
 }
@@ -147,6 +160,9 @@ export function measurePngSheet(
         dark: options.dark,
         transparentBackground: options.transparent,
         includeLegend: options.includeLegend,
+        // The export always draws the attribution strip, which grows the sheet — measure with the
+        // same option or the size hint promises a shorter image than the download delivers.
+        attribution: true,
     });
     return { width: geom.width, height: geom.height };
 }
@@ -159,7 +175,12 @@ export async function renderPngPreview(
     options: { dark: boolean; transparent: boolean; includeLegend: boolean },
     maxWidth = 320
 ): Promise<Blob> {
-    const sheet = await buildPngSheet(model, options.dark, options.transparent, options.includeLegend);
+    const sheet = await buildPngSheet(
+        model,
+        options.dark,
+        options.transparent,
+        options.includeLegend
+    );
     const scale = Math.min(1, maxWidth / sheet.width);
     return rasterizeSheet(sheet, options.dark, options.transparent, scale);
 }

@@ -32,12 +32,14 @@ A `<label class="tool-check">` wrapping a checkbox and its caption.
 */
 export function makeCheck(
     caption: string,
-    onChange: (checked: boolean) => void
+    onChange: (isChecked: boolean) => void
 ): { label: HTMLLabelElement; input: HTMLInputElement } {
     const label = makeElement('label', 'tool-check');
     const input = document.createElement('input');
     input.type = 'checkbox';
-    input.addEventListener('change', () => { onChange(input.checked); });
+    input.addEventListener('change', () => {
+        onChange(input.checked);
+    });
     const span = makeElement('span');
     span.textContent = caption;
     label.append(input, span);
@@ -45,14 +47,15 @@ export function makeCheck(
 }
 
 /**
-Look up a required element by id, failing loudly if the page is missing it.
+ * Look up a required element by id, failing loudly when the page is missing it or holds a
+different kind of element than the caller expects.
 */
-export function mustFind<T extends HTMLElement>(id: string): T {
-    const element = document.getElementById(id);
-    if (element === null) {
-        throw new Error(`Required element #${id} is missing from the page`);
+export function mustFind<T extends HTMLElement>(id: string, kind: new () => T): T {
+    const element = document.querySelector(`#${id}`);
+    if (!(element instanceof kind)) {
+        throw new TypeError(`Required element #${id} is missing from the page`);
     }
-    return element as T;
+    return element;
 }
 
 /**

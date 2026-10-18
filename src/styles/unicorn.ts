@@ -55,7 +55,7 @@ export const unicornStyle: GraphStyle = {
             chip: '#ffffff',
             chipStroke: '#ff5fbf',
             chipText: '#5b1246',
-            hint: '#c98fd6',
+            hint: '#835d8b',
         },
         dark: {
             background: '#241033',
@@ -77,7 +77,7 @@ export const unicornStyle: GraphStyle = {
             chip: '#ffffff',
             chipStroke: '#ff7ac6',
             chipText: '#3d0c33',
-            hint: '#8a5fa8',
+            hint: '#9a75b4',
         },
     },
     fills: {

@@ -16,13 +16,14 @@ export function isDarkMode(): boolean {
 Apply the stored (or system) theme before the first render to avoid a flash of wrong colors.
 */
 export function initTheme(): void {
-    let stored: string | null = null;
+    let stored: string | undefined;
     try {
-        stored = globalThis.localStorage.getItem(STORAGE_KEY);
+        stored = globalThis.localStorage.getItem(STORAGE_KEY) ?? undefined;
     } catch {
-        stored = null;
+        // Private mode / disabled storage: fall through to the system preference.
+        stored = undefined;
     }
-    const isSystemDark = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    const isSystemDark = globalThis.matchMedia('(prefers-color-scheme: dark)').matches;
     const isDark = stored === 'dark' || (stored !== 'light' && isSystemDark);
     document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
 }

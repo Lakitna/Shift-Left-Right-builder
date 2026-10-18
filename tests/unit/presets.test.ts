@@ -14,7 +14,7 @@ describe('REQ-04 presets', () => {
 
     it('every preset satisfies the strict parseModel contract', () => {
         for (const preset of PRESETS) {
-            expect(parseModel(preset.data), preset.name).not.toBeNull();
+            expect(parseModel(preset.data), preset.name).toBeDefined();
         }
     });
 

@@ -105,7 +105,7 @@ export const bartoszStyle: GraphStyle = {
         haloWidth: 0,
     },
     frame: 'none',
-    sparkles: null,
+    sparkles: undefined,
     curves: {
         colorSource: 'palette',
         palette: {

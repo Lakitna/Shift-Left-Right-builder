@@ -245,6 +245,8 @@ button.primary {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    /* WCAG 2.2 AA (2.5.8): the label is the pointer target, so it must clear 24×24. */
+    min-height: 24px;
     font-size: 14px;
     color: var(--text-muted);
     user-select: none;
@@ -642,7 +644,7 @@ input:focus-visible {
 
 /* High contrast: the accent blue only reaches ~3.5:1 against the dark surface, so primary
    buttons invert to solid ink and every control border thickens to 2px. Keys off the
-   `data-style` attribute written by styleState.applyChromeVars. */
+   `data-style` attribute written by style-state.applyChromeVariables. */
 :root[data-style='contrast'] .field input,
 :root[data-style='contrast'] .field select,
 :root[data-style='contrast'] .segment,

@@ -1,4 +1,4 @@
-# Open issues
+# Issues
 
 Defects and coverage gaps found while building the test suites in this repo.
 
@@ -7,36 +7,35 @@ Run the suites with:
 ```sh
 npm run test:unit   # component tier (vitest)
 npm run test:e2e    # GUI tier (Playwright, Chromium + Firefox, randomised order)
+npm run lint        # strict ESLint (typescript-eslint strictTypeChecked + eslint-plugin-unicorn)
 ```
 
-The suites deliberately encode **desired** behaviour, so items 1–5 below are _failing tests right
-now_ — `npm run test:unit` reports exactly five failures until they are fixed. That is the intended
-handover state, not a broken suite.
-
-The GUI tier is **green on both Chromium and Firefox** — 202 passing, nothing skipped — with two
-remaining product defects encoded as expected failures via `test.fail(true, …)`, so the suite stays
-green while they are open and Playwright reports an _unexpected pass_ the moment either is fixed:
-
-- **#9** the PNG size hint,
-- **#10** the 22px toolbar checkboxes.
-
-(#8 was a test bug rather than a defect — see the note in its place.)
+**Status: items 1–7, 9 and 10 are fixed and both suites are green** — `npm run test:unit` is 97/97,
+`npm run test:e2e` is 202/202 across Chromium and Firefox, and `npm run lint` reports zero problems.
+Each fixed item keeps its original diagnosis with a **Resolved** note describing the change, so the
+reasoning survives. Item **#11** is deliberately still open. (#8 was a test bug rather than a defect —
+see the note in its place.)
 
 ---
 
-## 1. `urlState.pipeBytes` leaks an unhandled rejection on a malformed share link
+## 1. `url-state.pipeBytes` leaks an unhandled rejection on a malformed share link
 
 - **Severity:** medium
-- **Where:** `src/urlState.ts` → `pipeBytes`
+- **Where:** `src/url-state.ts` → `pipeBytes`
 - **Symptom:** `writer.write(...)` and `writer.close()` are started with `void`, so when the stream
   errors — a corrupt or truncated `#p=` payload — those promises reject with nobody listening. Every
   malformed link produces an unhandled rejection. The decode still returns `null`, so the app shows
   the warning banner and falls back to the default model, which is why this went unnoticed.
-- **Demonstrated by:** `tests/unit/urlState.test.ts` ›
+- **Demonstrated by:** `tests/unit/url-state.test.ts` ›
   `leaks no unhandled rejection when a payload is corrupt` (currently EXPECTED RED; vitest also
   prints its process-level "unhandled errors" notice because of it).
 - **Fix:** `await` both writer calls inside the `try`, or attach `.catch(() => {})`. The test then
   passes and the vitest run is clean.
+- **Resolved:** the manual writer is gone. `pipeBytes` now wraps the bytes in a `Response`, pipes
+  that body through the transform with `ReadableStream#pipeThrough`, and reads the result back with
+  `arrayBuffer()`. `pipeThrough` marks its internal piping promise as handled and errors the output
+  stream, so a corrupt payload arrives as one *handled* rejection on `decodeModel`'s existing
+  `catch` — no `void`-ed promises, no unhandled rejection.
 
 ## 2. WCAG 2.2 AA: the `hint` text colour is below 4.5:1 in four styles
 
@@ -58,6 +57,12 @@ green while they are open and Playwright reports an _unexpected pass_ the moment
   `AA: every style reaches 4.5:1 on normal text and 3:1 on large text`
 - **Fix:** darken (light theme) / lighten (dark theme) `hint` in those four styles until each pair
   clears 4.5:1 in both themes.
+- **Resolved:** each of the eight `hint` tokens was blended towards black (light) or white (dark)
+  until it cleared 4.5:1 with margin — draftsman `#a8a49a` → `#74716a` (4.66) and `#6b675e` →
+  `#86827b` (4.65), toon `#b3a88f` → `#766f5e` (4.69) and `#5f6b85` → `#7d879c` (4.65), de-stijl
+  `#8d887c` → `#6f6b62` (4.70) and `#6b675e` → `#7e7b73` (4.66), unicorn `#c98fd6` → `#835d8b`
+  (4.69) and `#8a5fa8` → `#9a75b4` (4.66). Hue is preserved — only lightness moved. The 20 visual
+  baselines are unaffected, because the hint only paints in the empty-model state.
 
 ## 3. `parseModel` silently accepts a non-numeric `opacity`
 
@@ -71,6 +76,9 @@ green while they are open and Playwright reports an _unexpected pass_ the moment
   (EXPECTED RED)
 - **Decision needed first:** either reject (strict, matching the documentation) or relax the
   documentation. The test currently asserts the strict reading.
+- **Resolved:** the strict reading won. `parseCurve` rejects a *present* `opacity` that is not a
+  number, while an *absent* one still falls back to `DEFAULT_OPACITY` — so the documented
+  all-or-nothing contract holds and the lenient repair is gone.
 
 ## 4. `phaseBoundaries(0)` returns `[NaN]`
 
@@ -79,6 +87,8 @@ green while they are open and Playwright reports an _unexpected pass_ the moment
 - **Demonstrated by:** `tests/unit/model.test.ts` ›
   `phaseBoundaries returns an empty list when there are no phases` (EXPECTED RED)
 - **Fix:** return `[]` for `count <= 0`.
+- **Resolved:** `phaseBoundaries` returns `[]` for `count <= 0`. `nearestBoundaryX` shares the same
+  zero-phase case, so it now returns the clamped coordinate too.
 
 ## 5. `nearestPhaseX(x, 0)` returns `undefined` from a `number`-typed function
 
@@ -90,6 +100,8 @@ green while they are open and Playwright reports an _unexpected pass_ the moment
   (EXPECTED RED)
 - **Fix:** guard `count <= 0` and return `clampCoord(x)`; or widen the signature to
   `number | undefined` and handle it at the call sites.
+- **Resolved:** `nearestPhaseX` guards `count <= 0` and returns `clampCoord(x)`, so the `number`
+  signature is now honest instead of a lie.
 
 ## 6. Dead `dblclick` handler: double-click-to-add-a-point can never fire
 
@@ -101,6 +113,9 @@ green while they are open and Playwright reports an _unexpected pass_ the moment
 - The requirement was removed from `tests/REQUIREMENTS.md`, so nothing covers this now.
 - **Fix:** delete the handler and its branch (simplest), or stop re-rendering on a pointerdown that
   does not change the selection — which would also fix #7.
+- **Resolved:** the `dblclick` listener and its `onDoubleClick` handler are deleted. The
+  double-click requirement had already been dropped from `tests/REQUIREMENTS.md`, so nothing covered
+  it. #7 was fixed separately, so the two halves of the root cause are no longer alternatives.
 
 ## 7. Re-rendering the whole SVG inside `pointerdown` breaks element-level interaction
 
@@ -119,6 +134,9 @@ green while they are open and Playwright reports an _unexpected pass_ the moment
   exactly one event. The redundant re-render is still worth removing, but nothing in the suite
   depends on the `page.mouse` workaround any more — it is kept because it is the more faithful
   input.
+- **Resolved:** the redundant repaint is gone. `routePointer`'s curve-hit branch now renders only
+  when the selection actually changes (`index !== selectedCurve || selectedPoint !== undefined`), so
+  clicking an already-selected curve no longer throws the SVG away and rebuilds it mid-click.
 
 ---
 
@@ -166,6 +184,9 @@ unless you check the pointer stream.
   already correct and stays green.
 - **Fix:** measure with the same layout options as the export (pass `attribution: true`), or have
   both paths call one shared sheet-measuring helper so they cannot drift again.
+- **Resolved:** `measurePngSheet` passes `attribution: true` to `computeLayout` — the same option the
+  real export draws with — with a comment tying the two together so they cannot silently drift. The
+  `test.fail(true, …)` marker in `tests/e2e/export.spec.ts` is gone and the test asserts for real.
 
 ## 10. The two toolbar checkboxes are 22px tall, under the 24px AA minimum
 
@@ -179,6 +200,9 @@ unless you check the pointer stream.
   `AA: every pointer target is at least 24x24`, marked `test.fail(true, …)` so the suite stays green
   and the fix arrives as an unexpected pass.
 - **Fix:** give `.tool-check` at least 2px more vertical padding, or `min-height: 24px`.
+- **Resolved:** `.tool-check` carries `min-height: 24px`, with the WCAG 2.2 AA (2.5.8) reason in the
+  rule. The `test.fail(true, …)` marker in `tests/e2e/accessibility.spec.ts` is gone and the test
+  asserts for real. The visual baselines only snapshot `#graph-container`, so they are unaffected.
 
 ## 11. The graph canvas is not reachable by keyboard
 
@@ -197,6 +221,8 @@ unless you check the pointer stream.
 - **Fix direction:** give curves, handles and phase labels a `tabindex` plus a focus style, or offer
   a keyboard-accessible list-based way to choose a curve and point (a roving `tabindex` over
   `.point-handle` is the usual pattern). This needs a design decision rather than just markup.
+- **Left open on purpose** (2026-10-17): both directions above are viable and the choice is a product
+  decision — the item stays open rather than being guessed at. Everything else in this file is done.
 
 ---
 
@@ -216,8 +242,8 @@ unless you check the pointer stream.
 - **The canvas itself is not keyboard-reachable** — see #11. The accessibility spec covers the
   controls (tab order, focus visibility, target size, labels, text spacing and reflow at 320px); it
   cannot yet cover canvas keyboard editing, because that feature does not exist.
-- **`tests/unit/` covers pure logic only.** `render.ts`, `editor.ts`, `exportDialog.ts`,
-  `styleState.ts`, `theme.ts` and `fonts.ts` have no direct component tests by design (they need a
+- **`tests/unit/` covers pure logic only.** `render.ts`, `editor.ts`, `export-dialog.ts`,
+  `style-state.ts`, `theme.ts` and `fonts.ts` have no direct component tests by design (they need a
   DOM); their behaviour is covered through the GUI tier instead.
 
 ---

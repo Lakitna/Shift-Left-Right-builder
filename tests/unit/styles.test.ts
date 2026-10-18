@@ -16,6 +16,10 @@ const PUBLIC_STYLE_IDS = [
     'bartosz',
 ];
 
+// A `null` style id is what untyped URL / localStorage data can hand these functions, so it is
+// exercised explicitly. It is produced from JSON rather than written as a bare literal.
+const nullStyleId = JSON.parse('null') as string | null | undefined;
+
 describe('REQ-03 style registry', () => {
     it('keeps the seven public style ids in a stable order', () => {
         expect(STYLES.map((style) => style.id)).toEqual(PUBLIC_STYLE_IDS);
@@ -30,7 +34,7 @@ describe('REQ-03 style registry', () => {
         for (const id of PUBLIC_STYLE_IDS) {
             expect(isValidStyleId(id), id).toBe(true);
         }
-        for (const id of [null, undefined, '', 'Classic', 'nope', 'classic ']) {
+        for (const id of [nullStyleId, undefined, '', 'Classic', 'nope', 'classic ']) {
             expect(isValidStyleId(id), String(id)).toBe(false);
         }
     });
@@ -38,7 +42,7 @@ describe('REQ-03 style registry', () => {
     it('getStyle resolves a known id and falls back to Classic otherwise', () => {
         expect(getStyle('toon').id).toBe('toon');
         expect(getStyle('nope')).toBe(classicStyle);
-        expect(getStyle(null)).toBe(classicStyle);
+        expect(getStyle(nullStyleId)).toBe(classicStyle);
         expect(getStyle(undefined)).toBe(classicStyle);
     });
 

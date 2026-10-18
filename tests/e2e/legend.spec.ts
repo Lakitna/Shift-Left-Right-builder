@@ -48,6 +48,7 @@ test.describe('REQ-08 legend', () => {
         const firstRow = rows.first();
         const index = await firstRow.locator('[data-curve-drag]').getAttribute('data-curve-drag');
         expect(index).not.toBeNull();
+        if (index === null) throw new Error('the legend drag handle carries no curve index');
         const handleSelector = `[data-curve-drag="${index}"]`;
 
         // Bring the handle into view *before* hovering: scrolling later would move the row out from

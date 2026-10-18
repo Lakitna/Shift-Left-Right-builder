@@ -49,7 +49,7 @@ export interface StyleIssue {
  *   Outlined/hatched/gradient styles (toon, de-stijl, draftsman, unicorn) express
  *   boundaries with rules or patterns, so their fields are decorative and exempt by design.
  */
-export function validateStyle(style: GraphStyle, strictText: boolean): StyleIssue[] {
+export function validateStyle(style: GraphStyle, isStrictText: boolean): StyleIssue[] {
     const issues: StyleIssue[] = [];
     const isFillsCarryBoundaries =
         style.stroke.curveOutline === 0 && style.fills.mode === 'solid';
@@ -63,31 +63,33 @@ export function validateStyle(style: GraphStyle, strictText: boolean): StyleIssu
                     issues.push({
                         style: style.id,
                         theme,
-                        what: `curve fill #${index + 1} vs ground`,
+                        what: `curve fill #${String(index + 1)} vs ground`,
                         ratio: Math.round(ratio * 100) / 100,
                         required: 3,
                     });
                 }
             }
         }
-        if (strictText) {
-            const pairs: [string, string, string][] = [
-                ['legendMuted vs ground', palette.legendMuted, palette.background],
-                ['title vs ground', palette.title, palette.background],
-                ['chipText vs chip', palette.chipText, palette.chip],
-                ['hint vs ground', palette.hint, palette.background],
-            ];
-            for (const [what, fg, bg] of pairs) {
-                const ratio = contrastRatio(fg, bg);
-                if (ratio < 7) {
-                    issues.push({
-                        style: style.id,
-                        theme,
-                        what,
-                        ratio: Math.round(ratio * 100) / 100,
-                        required: 7,
-                    });
-                }
+        if (!isStrictText) {
+            continue;
+        }
+
+        const pairs: [string, string, string][] = [
+            ['legendMuted vs ground', palette.legendMuted, palette.background],
+            ['title vs ground', palette.title, palette.background],
+            ['chipText vs chip', palette.chipText, palette.chip],
+            ['hint vs ground', palette.hint, palette.background],
+        ];
+        for (const [what, fg, bg] of pairs) {
+            const ratio = contrastRatio(fg, bg);
+            if (ratio < 7) {
+                issues.push({
+                    style: style.id,
+                    theme,
+                    what,
+                    ratio: Math.round(ratio * 100) / 100,
+                    required: 7,
+                });
             }
         }
     }

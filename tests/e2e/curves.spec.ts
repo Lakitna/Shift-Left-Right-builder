@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import {
     clickRevealedBadge,
-    dragCurveBody,
+    isDragCurveBody,
     dragElement,
     gotoApp,
     handleX,
@@ -18,7 +18,8 @@ Schematic's first curve ("Shift-left") carries seven control points.
 */
 const SHIFT_LEFT_POINTS = 7;
 
-const curveGroup = (index: number) => `#graph-container g.curves > g[data-curve-index="${index}"]`;
+const curveGroup = (index: number) =>
+    `#graph-container g.curves > g[data-curve-index="${String(index)}"]`;
 
 test.describe('REQ-05 curve editing', () => {
     test('selecting a curve reveals its control points', async ({ page }) => {
@@ -74,10 +75,11 @@ test.describe('REQ-05 curve editing', () => {
         await selectCurve(page, 2);
         const before = await page.locator(`${curveGroup(2)} .curve-line`).boundingBox();
 
-        expect(await dragCurveBody(page, 2, { x: -30, y: 0 })).toBe(true);
+        expect(await isDragCurveBody(page, 2, { x: -30, y: 0 })).toBe(true);
 
         const after = await page.locator(`${curveGroup(2)} .curve-line`).boundingBox();
-        expect(Math.abs(after!.x - before!.x + 30)).toBeLessThan(5);
+        if (before === null || after === null) throw new Error('a curve path has no bounding box');
+        expect(Math.abs(after.x - before.x + 30)).toBeLessThan(5);
     });
 
     test('adds and removes curves, keeping the legend in step', async ({ page }) => {

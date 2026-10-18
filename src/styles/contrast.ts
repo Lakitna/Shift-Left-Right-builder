@@ -95,7 +95,7 @@ export const contrastStyle: GraphStyle = {
         haloWidth: 0,
     },
     frame: 'none',
-    sparkles: null,
+    sparkles: undefined,
     curves: {
         colorSource: 'palette',
         palette: {

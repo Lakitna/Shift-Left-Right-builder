@@ -23,16 +23,16 @@ export function clampPngWidth(value: number): number {
     return Number.isFinite(value) ? Math.min(PNG_MAX_WIDTH, Math.max(PNG_MIN_WIDTH, Math.round(value))) : PNG_DEFAULT_WIDTH;
 }
 
-function readJson(key: string): Record<string, unknown> | null {
+function readJson(key: string): Record<string, unknown> | undefined {
     try {
         const raw = globalThis.localStorage.getItem(key);
-        if (raw === null) return null;
+        if (raw === null) return undefined;
         const parsed = JSON.parse(raw) as unknown;
         return typeof parsed === 'object' && parsed !== null
             ? (parsed as Record<string, unknown>)
-            : null;
+            : undefined;
     } catch {
-        return null;
+        return undefined;
     }
 }
 
@@ -48,8 +48,11 @@ function textOr(stored: unknown, fallback: string): string {
     return typeof stored === 'string' && stored.trim() !== '' ? stored : fallback;
 }
 
-function boolOr(stored: unknown, fallback: boolean): boolean {
-    return typeof stored === 'boolean' ? stored : fallback;
+/**
+Whether the stored value is a boolean — the guard for the two boolean settings.
+*/
+function isStoredBoolean(stored: unknown): stored is boolean {
+    return typeof stored === 'boolean';
 }
 
 function themeOr(stored: unknown, fallback: 'light' | 'dark'): 'light' | 'dark' {
@@ -73,7 +76,7 @@ function createStore<T extends ExportSettingsBase>(
         read(): T {
             const fallback = defaults();
             const stored = readJson(key);
-            return stored === null ? fallback : { ...fallback, ...validate(stored, fallback) };
+            return stored === undefined ? fallback : { ...fallback, ...validate(stored, fallback) };
         },
         write(settings: T): void {
             writeJson(key, settings);
@@ -87,8 +90,8 @@ function validateBase(
 ): Partial<ExportSettingsBase> {
     return {
         filename: textOr(stored.filename, fallback.filename),
-        transparent: boolOr(stored.transparent, fallback.transparent),
-        includeLegend: boolOr(stored.includeLegend, fallback.includeLegend),
+        transparent: isStoredBoolean(stored.transparent) ? stored.transparent : fallback.transparent,
+        includeLegend: isStoredBoolean(stored.includeLegend) ? stored.includeLegend : fallback.includeLegend,
         theme: themeOr(stored.theme, fallback.theme),
     };
 }

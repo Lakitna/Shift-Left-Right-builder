@@ -32,7 +32,7 @@ npm run test:unit:watch
 ```
 
 Covers the **pure-logic modules only** — `model` (parsing, clamping, all the curve/phase/event
-operations), `presets`, `history`, the `urlState` wire format, the style registry and its WCAG
+operations), `presets`, `history`, the `url-state` wire format, the style registry and its WCAG
 contrast maths, the settings validators and the `ui` string helpers.
 
 These deliberately run in the plain `node` environment with no DOM: if a module needs `window` or

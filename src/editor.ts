@@ -17,12 +17,10 @@
  * commit (history + full re-render) or just sync the URL (live drag).
  */
 
-import { addBadge, svgEl as svgElement } from './dom';
+import { addBadge, svgElement } from './dom';
 import { startGesture } from './gesture';
 import {
-    addCurve,
     addEvent,
-    addPhase,
     canAddPhase,
     canRemoveCurve,
     canRemovePoint,
@@ -30,20 +28,22 @@ import {
     clampOpacity,
     cloneModel,
     DEFAULT_OPACITY,
-    insertPoint,
+    didAddCurve,
+    didAddPhase,
+    didInsertPoint,
+    didMoveCurve,
+    didRemoveCurve,
+    didRemoveEvent,
+    didRemovePhase,
+    didRemovePoint,
+    didReorderCurve,
+    didReorderPhase,
+    didSetEventX,
+    didSetPoint,
     MAX_OPACITY,
     MIN_OPACITY,
-    moveCurve,
     nearestBoundaryX,
     nearestPhaseX,
-    removeCurve,
-    removeEvent,
-    removePhase,
-    removePoint,
-    reorderCurve,
-    reorderPhase,
-    setEventX,
-    setPoint,
     type Curve,
     type CurvePoint,
     type GraphModel,
@@ -59,7 +59,7 @@ import {
     segmentMidpoint,
     type GraphGeom,
 } from './render';
-import { getActiveStyle } from './styleState';
+import { getActiveStyle } from './style-state';
 import { isDarkMode } from './theme';
 import { makeCheck, makeElement } from './ui';
 
@@ -94,27 +94,51 @@ export interface GraphEditor {
 }
 
 /**
+The item at `index`, or undefined when the list is shorter than the index (a stale index, or a list
+that shifted underneath a pending interaction).
+*/
+function itemAt<T>(list: readonly T[], index: number): T | undefined {
+    return list[index];
+}
+
+/**
  * Selection is stored as a curve INDEX, but list mutations (remove, reorder) shift indices. These
  * two pure helpers are the only place that arithmetic lives, so every mutation site stays a
  * one-liner and the fixup rules cannot drift apart.
  */
 
 /**
-The index `sel` takes after the item at `removed` leaves the list (null when it was removed).
+The index `sel` takes after the item at `removed` leaves the list (undefined when it was removed).
 */
-function afterRemove(sel: number | null, removed: number): number | null {
-    if (sel === null || sel === removed) return null;
+function afterRemove(sel: number | undefined, removed: number): number | undefined {
+    if (sel === undefined || sel === removed) return undefined;
     return sel > removed ? sel - 1 : sel;
 }
 
 /**
 The index `sel` takes after the item at `from` is re-inserted at `to` (splice semantics).
 */
-function afterMove(sel: number | null, from: number, to: number): number | null {
-    if (sel === null) return null;
+function afterMove(sel: number | undefined, from: number, to: number): number | undefined {
+    if (sel === undefined) return undefined;
     if (sel === from) return to;
     if (from < to && sel > from && sel <= to) return sel - 1;
     return from > to && sel >= to && sel < from ? sel + 1 : sel;
+}
+
+/**
+The editor accent (selection rings, handles, "+" badges) follows the style's canvas accent.
+*/
+function accent(): string {
+    const canvas = getActiveStyle().canvas;
+    return (isDarkMode() ? canvas.dark : canvas.light).eventLabel;
+}
+
+/**
+Swallow the gesture that opened the picker (and any later canvas click) so the canvas handler
+never fights the native popup; clicking elsewhere closes the picker via blur.
+*/
+function canvasGuard(event: PointerEvent): void {
+    event.stopPropagation();
 }
 
 export function createEditor(
@@ -122,13 +146,13 @@ export function createEditor(
     canvasElement: HTMLElement,
     host: EditorHost
 ): GraphEditor {
-    let selectedCurve: number | null = null;
-    let selectedPoint: CurvePoint | null = null;
+    let selectedCurve: number | undefined;
+    let selectedPoint: CurvePoint | undefined;
     let isSnapEnabled = false;
-    let geom: GraphGeom | null = null;
-    let svg: SVGSVGElement | null = null;
+    let geom: GraphGeom | undefined;
+    let svg: SVGSVGElement | undefined;
     let handlePoints: CurvePoint[] = [];
-    let activeInline: { commit: () => void } | null = null;
+    let activeInline: { commit: () => void } | undefined;
 
     /**
      * The toolbar is data-driven. Each segment declares when it is visible; each control registers
@@ -138,28 +162,42 @@ export function createEditor(
     const toolbarSegments: {
         element: HTMLElement;
         /**
-        Divider rendered before this segment (null for the first); hides with it.
+        Divider rendered before this segment (undefined for the first); hides with it.
         */
-        divider: HTMLElement | null;
+        divider: HTMLElement | undefined;
         visible(): boolean;
     }[] = [];
     const toolbarSyncs: (() => void)[] = [];
 
+    /**
+    A toolbar checkbox: `makeCheck` owns the label/input pair and the registered sync keeps the
+    input's checked state in step with the model.
+    */
+    const check = (
+        parent: HTMLElement,
+        caption: string,
+        isChecked: () => boolean,
+        set: (isChecked: boolean) => void
+    ): void => {
+        const { label, input } = makeCheck(caption, set);
+        parent.append(label);
+        toolbarSyncs.push(() => {
+            input.checked = isChecked();
+        });
+    };
+
+    /**
+    The selected curve, or undefined when nothing (or something stale) is picked.
+    */
+    const selected = (): Curve | undefined =>
+        selectedCurve === undefined ? undefined : model().curves[selectedCurve];
+
     buildToolbar();
 
     canvasElement.addEventListener('pointerdown', onPointerDown);
-    canvasElement.addEventListener('dblclick', onDoubleClick);
 
     function model(): GraphModel {
         return host.getModel();
-    }
-
-    /**
-    The editor accent (selection rings, handles, "+" badges) follows the style's canvas accent.
-    */
-    function accent(): string {
-        const canvas = getActiveStyle().canvas;
-        return (isDarkMode() ? canvas.dark : canvas.light).eventLabel;
     }
 
     // --- Toolbar -------------------------------------------------------------
@@ -169,15 +207,15 @@ export function createEditor(
         // Three segments separated by visual dividers: generic (always), curve (selection only),
         // graph (always). Within the curve segment, controls that cannot apply to the current
         // curve/selection are disabled rather than hidden, so nothing shifts.
-        const segment = (visible: () => boolean = () => true): HTMLElement => {
-            let divider: HTMLElement | null = null;
+        const segment = (isVisible: () => boolean = () => true): HTMLElement => {
+            let divider: HTMLElement | undefined;
             if (toolbarSegments.length > 0) {
                 divider = makeElement('div', 'tool-divider');
                 toolbarElement.append(divider);
             }
             const element = makeElement('div', 'tool-segment');
             toolbarElement.append(element);
-            toolbarSegments.push({ element, divider, visible });
+            toolbarSegments.push({ element, divider, visible: isVisible });
             return element;
         };
         const group = (parent: HTMLElement): HTMLElement => {
@@ -190,26 +228,12 @@ export function createEditor(
             label: string,
             title: string,
             onClick: () => void,
-            enabled: () => boolean = () => true
+            isEnabled: () => boolean = () => true
         ): void => {
             const b = makeElement('button', { label, title, onClick });
             b.type = 'button';
             parent.append(b);
-            toolbarSyncs.push(() => (b.disabled = !enabled()));
-        };
-        const check = (
-            parent: HTMLElement,
-            caption: string,
-            get: () => boolean,
-            set: (checked: boolean) => void,
-            enabled: () => boolean = () => true
-        ): void => {
-            const { label, input } = makeCheck(caption, set);
-            parent.append(label);
-            toolbarSyncs.push(() => {
-                input.checked = get();
-                input.disabled = !enabled();
-            });
+            toolbarSyncs.push(() => (b.disabled = !isEnabled()));
         };
         const range = (
             parent: HTMLElement,
@@ -234,8 +258,12 @@ export function createEditor(
             input.max = String(spec.max);
             input.step = spec.step;
             input.title = spec.title;
-            input.addEventListener('input', () => { spec.setLive(Number(input.value)); });
-            input.addEventListener('change', spec.commit);
+            input.addEventListener('input', () => {
+                spec.setLive(Number(input.value));
+            });
+            input.addEventListener('change', () => {
+                spec.commit();
+            });
             wrap.append(span, input);
             parent.append(wrap);
             toolbarSyncs.push(() => {
@@ -244,26 +272,24 @@ export function createEditor(
             });
         };
 
-        /**
-        The selected curve, or undefined when nothing (or something stale) is picked.
-        */
-        const selected = (): Curve | undefined =>
-            selectedCurve === null ? undefined : model().curves[selectedCurve];
-
         const segGeneric = segment();
         const gHistory = group(segGeneric);
         button(
             gHistory,
             '↶',
             'Undo (Ctrl+Z)',
-            () => { host.undo(); },
+            () => {
+                host.undo();
+            },
             () => host.canUndo()
         );
         button(
             gHistory,
             '↷',
             'Redo (Ctrl+Y)',
-            () => { host.redo(); },
+            () => {
+                host.redo();
+            },
             () => host.canRedo()
         );
 
@@ -279,8 +305,8 @@ export function createEditor(
         presetSelect.addEventListener('change', () => {
             const value = presetSelect.value;
             if (value === '') return;
-            selectedCurve = null;
-            selectedPoint = null;
+            selectedCurve = undefined;
+            selectedPoint = undefined;
             host.replaceModel(cloneModel(PRESETS[Number(value)].data));
             presetSelect.value = '';
         });
@@ -293,12 +319,12 @@ export function createEditor(
             '🗑',
             'Delete selected curve',
             () => {
-                if (selectedCurve === null || !removeCurve(model(), selectedCurve)) {
+                if (selectedCurve === undefined || !didRemoveCurve(model(), selectedCurve)) {
                     return;
                 }
 
-                selectedCurve = null;
-                selectedPoint = null;
+                selectedCurve = undefined;
+                selectedPoint = undefined;
                 host.onCommit();
             },
             () => selected() !== undefined && canRemoveCurve(model())
@@ -328,12 +354,14 @@ export function createEditor(
             get: () => selected()?.opacity ?? DEFAULT_OPACITY,
             setLive: (value) => {
                 const curve = selected();
-                if (curve === undefined || selectedCurve === null) return;
+                if (curve === undefined || selectedCurve === undefined) return;
                 curve.opacity = clampOpacity(value);
                 updateCurveOpacity(selectedCurve);
                 host.onLive();
             },
-            commit: () => { host.onCommit(); },
+            commit: () => {
+                host.onCommit();
+            },
             enabled: () => selected() !== undefined,
         });
 
@@ -343,7 +371,7 @@ export function createEditor(
             '⟨',
             'Send curve backward',
             () => {
-                if (selectedCurve === null || !moveCurve(model(), selectedCurve, -1)) {
+                if (selectedCurve === undefined || !didMoveCurve(model(), selectedCurve, -1)) {
                     return;
                 }
 
@@ -351,21 +379,21 @@ export function createEditor(
                 selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve - 1);
                 host.onCommit();
             },
-            () => selectedCurve !== null && selectedCurve > 0
+            () => selectedCurve !== undefined && selectedCurve > 0
         );
         button(
             gOrder,
             '⟩',
             'Bring curve forward',
             () => {
-                if (selectedCurve === null || !moveCurve(model(), selectedCurve, 1)) {
+                if (selectedCurve === undefined || !didMoveCurve(model(), selectedCurve, 1)) {
                     return;
                 }
 
                 selectedCurve = afterMove(selectedCurve, selectedCurve, selectedCurve + 1);
                 host.onCommit();
             },
-            () => selectedCurve !== null && selectedCurve < model().curves.length - 1
+            () => selectedCurve !== undefined && selectedCurve < model().curves.length - 1
         );
 
         const segGraph = segment();
@@ -395,7 +423,7 @@ export function createEditor(
             segment.element.style.display = isVisible ? '' : 'none';
             // A hidden segment takes its leading divider with it, so the row never shows a
             // dangling separator when the curve segment is collapsed.
-            if (segment.divider !== null) {
+            if (segment.divider !== undefined) {
                 segment.divider.style.display = isVisible ? '' : 'none';
             }
         }
@@ -406,9 +434,12 @@ export function createEditor(
 
     function render(): void {
         const m = model();
-        if (selectedCurve !== null && (selectedCurve < 0 || selectedCurve >= m.curves.length)) {
-            selectedCurve = null;
-            selectedPoint = null;
+        if (
+            selectedCurve !== undefined &&
+            (selectedCurve < 0 || selectedCurve >= m.curves.length)
+        ) {
+            selectedCurve = undefined;
+            selectedPoint = undefined;
         }
         const isDark = isDarkMode();
         const result = renderGraphSvg(m, { style: getActiveStyle(), dark: isDark, editing: true });
@@ -420,14 +451,16 @@ export function createEditor(
     }
 
     function buildOverlay(m: GraphModel): void {
-        if (svg === null || geom === null) return;
+        if (svg === undefined || geom === undefined) return;
         const g = geom; // capture the non-null geometry for use inside callbacks
         const overlay = svgElement('g', { class: 'editing-ui' });
         const accumulator = accent();
 
-        if (selectedCurve !== null) {
-            const curve = m.curves[selectedCurve];
-            if (curve) {
+        if (selectedCurve === undefined) {
+            handlePoints = [];
+        } else {
+            const curve = itemAt(m.curves, selectedCurve);
+            if (curve !== undefined) {
                 overlay.append(
                     svgElement('path', {
                         class: 'curve-move',
@@ -476,8 +509,6 @@ export function createEditor(
                     );
                 }
             }
-        } else {
-            handlePoints = [];
         }
 
         // "+" at the end of the phase row: WYSIWYG add-phase (append; drag to reposition).
@@ -497,34 +528,36 @@ export function createEditor(
 
     function updateCurvePaths(
         index: number
-    ): { fill: SVGPathElement; line: SVGPathElement; hit: SVGPathElement } | null {
-        if (svg === null) return null;
-        const group = svg.querySelector(`.curves g[data-curve-index="${CSS.escape(index)}"]`);
-        if (group === null) return null;
+    ): { fill: SVGPathElement; line: SVGPathElement; hit: SVGPathElement } | undefined {
+        if (svg === undefined) return undefined;
+        const group = svg.querySelector(
+            `.curves g[data-curve-index="${CSS.escape(String(index))}"]`
+        );
+        if (group === null) return undefined;
         // Query by class, not by child order: live repaints must not break if render.ts ever
         // adds or reorders a path inside the curve group.
         const fill = group.querySelector<SVGPathElement>('.curve-fill');
         const line = group.querySelector<SVGPathElement>('.curve-line');
         const hit = group.querySelector<SVGPathElement>('.curve-hit');
-        return fill === null || line === null || hit === null ? null : { fill, line, hit };
+        return fill === null || line === null || hit === null ? undefined : { fill, line, hit };
     }
 
     /**
     Repaint a curve's geometry after a live point drag.
     */
     function updateCurve(index: number): void {
-        if (geom === null) return;
-        const curve = model().curves[index];
+        if (geom === undefined) return;
+        const curve = itemAt(model().curves, index);
         const paths = updateCurvePaths(index);
-        if (curve === undefined || paths === null) return;
+        if (curve === undefined || paths === undefined) return;
         paths.fill.setAttribute('d', curveAreaPath(curve, geom));
         paths.line.setAttribute('d', curveLinePath(curve, geom));
     }
 
     function updateCurveColor(index: number): void {
-        const curve = model().curves[index];
+        const curve = itemAt(model().curves, index);
         const paths = updateCurvePaths(index);
-        if (curve === undefined || paths === null || geom === null) return;
+        if (curve === undefined || paths === undefined || geom === undefined) return;
         paths.fill.setAttribute('fill', curve.color);
         // A picked color is a custom SOLID fill; styles with an ink outline keep their
         // stroked top edge in ink regardless of the fill.
@@ -537,18 +570,18 @@ export function createEditor(
     }
 
     function updateCurveOpacity(index: number): void {
-        const curve = model().curves[index];
+        const curve = itemAt(model().curves, index);
         const paths = updateCurvePaths(index);
-        if (curve === undefined || paths === null) return;
+        if (curve === undefined || paths === undefined) return;
         paths.fill.setAttribute('fill-opacity', String(curve.opacity));
     }
 
     function repositionHandles(): void {
-        if (svg === null || geom === null) return;
+        if (svg === undefined || geom === undefined) return;
         const g = geom;
         svg.querySelectorAll<SVGCircleElement>('circle.point-handle').forEach((circle) => {
-            const index = Number(circle.getAttribute('data-handle-index'));
-            const point = handlePoints[index];
+            const index = Number(circle.dataset.handleIndex);
+            const point = itemAt(handlePoints, index);
             if (point === undefined) return;
             const p = pointPx(point, g);
             circle.setAttribute('cx', String(p.x));
@@ -563,9 +596,9 @@ export function createEditor(
      * instead of drifting away from it.
      */
     function updateEvent(index: number): void {
-        if (svg === null || geom === null) return;
+        if (svg === undefined || geom === undefined) return;
         const g = geom;
-        const event = model().events[index];
+        const event = itemAt(model().events, index);
         if (event === undefined) return;
         const px = g.toPx(event.x, 0).x;
         const { anchor, textX } = calloutAnchor(
@@ -576,25 +609,23 @@ export function createEditor(
         );
         const dm = 5;
         const byY = g.baselineY;
-        const line = svg.querySelector(`[data-event-line="${CSS.escape(index)}"]`);
+        const line = svg.querySelector(`[data-event-line="${CSS.escape(String(index))}"]`);
         if (line !== null) {
             line.setAttribute('x1', String(px));
             line.setAttribute('x2', String(px));
         }
-        const leader = svg.querySelector(`[data-event-leader="${CSS.escape(index)}"]`);
+        const leader = svg.querySelector(`[data-event-leader="${CSS.escape(String(index))}"]`);
         if (leader !== null) {
             leader.setAttribute('x1', String(px));
             leader.setAttribute('x2', String(px));
         }
-        const diamond = svg.querySelector(`[data-event-diamond="${CSS.escape(index)}"]`);
+        const diamond = svg.querySelector(`[data-event-diamond="${CSS.escape(String(index))}"]`);
         if (diamond !== null) {
-            diamond.setAttribute(
-                'points',
-                `${px},${byY - dm} ${px + dm},${byY} ${px},${byY + dm} ${px - dm},${byY}`
-            );
+            const points = `${String(px)},${String(byY - dm)} ${String(px + dm)},${String(byY)} ${String(px)},${String(byY + dm)} ${String(px - dm)},${String(byY)}`;
+            diamond.setAttribute('points', points);
         }
         svg.querySelectorAll(
-            `text[data-event-index="${CSS.escape(index)}"], text[data-event-note="${CSS.escape(index)}"]`
+            `text[data-event-index="${CSS.escape(String(index))}"], text[data-event-note="${CSS.escape(String(index))}"]`
         ).forEach((element) => {
             element.setAttribute('x', String(textX));
             element.setAttribute('text-anchor', anchor);
@@ -603,17 +634,17 @@ export function createEditor(
 
     // --- Pointer handling ----------------------------------------------------
 
-    function svgPointToModel(clientX: number, clientY: number): CurvePoint | null {
-        if (svg === null || geom === null) return null;
+    function svgPointToModel(clientX: number, clientY: number): CurvePoint | undefined {
+        if (svg === undefined || geom === undefined) return undefined;
         const rect = svg.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return null;
+        if (rect.width === 0 || rect.height === 0) return undefined;
         const ux = (clientX - rect.left) * (geom.width / rect.width);
         const uy = (clientY - rect.top) * (geom.height / rect.height);
         return geom.fromPx(ux, uy);
     }
 
     function onPointerDown(event: PointerEvent): void {
-        if (activeInline !== null) {
+        if (activeInline !== undefined) {
             // Clicks inside the open editor (caret placement, text selection) must not commit it.
             if ((event.target as Element).closest('.inline-editor') !== null) return;
             activeInline.commit();
@@ -627,48 +658,48 @@ export function createEditor(
     }
 
     function routePointer(target: Element, event: PointerEvent): void {
-        const handle = target.closest('[data-handle-index]');
+        const handle = target.closest<SVGElement>('[data-handle-index]');
         if (handle !== null) {
-            startDrag(Number(handle.getAttribute('data-handle-index')), event);
+            startDrag(Number(handle.dataset.handleIndex), event);
             return;
         }
 
-        const moveHandle = target.closest('[data-curve-move]');
+        const moveHandle = target.closest<SVGElement>('[data-curve-move]');
         if (moveHandle !== null) {
-            startMoveCurve(Number(moveHandle.getAttribute('data-curve-move')), event);
+            startMoveCurve(Number(moveHandle.dataset.curveMove), event);
             return;
         }
 
-        const insert = target.closest('[data-insert-x]');
+        const insert = target.closest<SVGElement>('[data-insert-x]');
         if (insert !== null) {
-            const curveIndex = Number(insert.getAttribute('data-curve-index'));
-            const x = Number(insert.getAttribute('data-insert-x'));
-            const yAttribute = insert.getAttribute('data-insert-y');
-            const y = yAttribute === null ? undefined : Number(yAttribute);
-            if (insertPoint(model(), curveIndex, x, y)) {
+            const curveIndex = Number(insert.dataset.curveIndex);
+            const x = Number(insert.dataset.insertX);
+            const yAttribute = insert.dataset.insertY;
+            const y = yAttribute === undefined ? undefined : Number(yAttribute);
+            if (didInsertPoint(model(), curveIndex, x, y)) {
                 selectedCurve = curveIndex;
-                selectedPoint = null;
+                selectedPoint = undefined;
                 host.onCommit();
             }
             return;
         }
 
-        const phaseRemove = target.closest('[data-phase-remove]');
+        const phaseRemove = target.closest<SVGElement>('[data-phase-remove]');
         if (phaseRemove !== null) {
-            const index = Number(phaseRemove.getAttribute('data-phase-remove'));
-            if (removePhase(model(), index)) host.onCommit();
+            const index = Number(phaseRemove.dataset.phaseRemove);
+            if (didRemovePhase(model(), index)) host.onCommit();
             return;
         }
 
         if (target.closest('[data-phase-add]') !== null) {
-            if (addPhase(model())) host.onCommit();
+            if (didAddPhase(model())) host.onCommit();
             return;
         }
 
-        const eventRemove = target.closest('[data-event-remove]');
+        const eventRemove = target.closest<SVGElement>('[data-event-remove]');
         if (eventRemove !== null) {
-            const index = Number(eventRemove.getAttribute('data-event-remove'));
-            if (removeEvent(model(), index)) host.onCommit();
+            const index = Number(eventRemove.dataset.eventRemove);
+            if (didRemoveEvent(model(), index)) host.onCommit();
             return;
         }
 
@@ -676,10 +707,12 @@ export function createEditor(
         // new event is named right where it was added (mirrors "+ Add curve").
         if (target.closest('[data-event-add]') !== null) {
             const added = addEvent(model());
-            if (added !== null) {
+            if (added !== undefined) {
                 host.onCommit();
                 const index = model().events.indexOf(added);
-                const label = svg?.querySelector(`text[data-event-index="${CSS.escape(index)}"]`);
+                const label = svg?.querySelector(
+                    `text[data-event-index="${CSS.escape(String(index))}"]`
+                );
                 if (label instanceof SVGElement) startInline(label);
             }
             return;
@@ -688,113 +721,98 @@ export function createEditor(
         // Legend "+ Add curve" row: append a curve, select it, and open its label for typing so
         // the new curve is named right where it was clicked.
         if (target.closest('[data-curve-add]') !== null) {
-            if (addCurve(model())) {
+            if (didAddCurve(model())) {
                 const index = model().curves.length - 1;
                 selectedCurve = index;
-                selectedPoint = null;
+                selectedPoint = undefined;
                 host.onCommit();
-                const block = svg?.querySelector(`.legend-block[data-curve-index="${CSS.escape(index)}"]`);
+                const block = svg?.querySelector(
+                    `.legend-block[data-curve-index="${CSS.escape(String(index))}"]`
+                );
                 if (block instanceof SVGElement) startInline(block);
             }
             return;
         }
 
-        const phaseText = target.closest('text[data-phase-index]');
+        const phaseText = target.closest<SVGElement>('text[data-phase-index]');
         if (phaseText !== null) {
             // Phase labels carry three interactions on one element: a plain click edits the text,
             // a horizontal drag reorders the phase, and a drag below the label row deletes it.
-            startPhaseInteraction(
-                Number(phaseText.getAttribute('data-phase-index')),
-                phaseText as SVGElement,
-                event
-            );
+            startPhaseInteraction(Number(phaseText.dataset.phaseIndex), phaseText, event);
             return;
         }
 
-        const eventText = target.closest('text[data-event-index]');
+        const eventText = target.closest<SVGElement>('text[data-event-index]');
         if (eventText !== null) {
             // Event labels are click-to-edit AND drag-to-reposition (snap to the nearest phase
             // boundary with Shift or the "Snap to phases" toggle).
-            startEventInteraction(
-                Number(eventText.getAttribute('data-event-index')),
-                eventText as SVGElement,
-                event
-            );
+            startEventInteraction(Number(eventText.dataset.eventIndex), eventText, event);
             return;
         }
 
         // Legend row hover-reveal drag handle: reorders the curve's paint layer.
-        const curveDrag = target.closest('[data-curve-drag]');
+        const curveDrag = target.closest<SVGElement>('[data-curve-drag]');
         if (curveDrag !== null) {
-            startLegendDrag(Number(curveDrag.getAttribute('data-curve-drag')), event);
+            startLegendDrag(Number(curveDrag.dataset.curveDrag), event);
             return;
         }
 
         // Legend row hover-reveal ✕: removes that curve (mirrors the phase-row ✕).
-        const curveRemove = target.closest('[data-curve-remove]');
+        const curveRemove = target.closest<SVGElement>('[data-curve-remove]');
         if (curveRemove !== null) {
-            const index = Number(curveRemove.getAttribute('data-curve-remove'));
-            if (removeCurve(model(), index)) {
+            const index = Number(curveRemove.dataset.curveRemove);
+            if (didRemoveCurve(model(), index)) {
                 selectedCurve = afterRemove(selectedCurve, index);
-                if (selectedCurve === null) selectedPoint = null;
+                if (selectedCurve === undefined) selectedPoint = undefined;
                 host.onCommit();
             }
             return;
         }
 
-        const edit = target.closest('[data-edit-field]');
+        const edit = target.closest<SVGElement>('[data-edit-field]');
         if (edit !== null) {
             // The legend swatch is a color selector, not a text field.
-            if (edit.getAttribute('data-edit-field') === 'legend-block') {
-                const swatch = target.closest('[data-swatch-index]');
+            if (edit.dataset.editField === 'legend-block') {
+                const swatch = target.closest<SVGElement>('[data-swatch-index]');
                 if (swatch !== null) {
                     event.preventDefault();
-                    openSwatchPicker(Number(swatch.getAttribute('data-swatch-index')));
+                    openSwatchPicker(Number(swatch.dataset.swatchIndex));
                     return;
                 }
             }
             // Without preventDefault the browser's default focus handling blurs the freshly
             // opened editor, and its blur-commit closes it again in the same click.
             event.preventDefault();
-            startInline(edit as SVGElement);
+            startInline(edit);
             return;
         }
 
-        const curveHit = target.closest('[data-curve-index]');
+        const curveHit = target.closest<SVGElement>('[data-curve-index]');
         if (curveHit !== null) {
-            selectedCurve = Number(curveHit.getAttribute('data-curve-index'));
-            selectedPoint = null;
-            render();
+            const index = Number(curveHit.dataset.curveIndex);
+            // Repaint only when the selection really changes. `render` replaces the whole SVG, and
+            // doing that on a pointerdown that changes nothing detaches the clicked element mid-click
+            // and costs a full layout pass for no visible difference.
+            if (index !== selectedCurve || selectedPoint !== undefined) {
+                selectedCurve = index;
+                selectedPoint = undefined;
+                render();
+            }
             return;
         }
 
-        if (selectedCurve === null) {
+        if (selectedCurve === undefined) {
             return;
         }
 
-        selectedCurve = null;
-        selectedPoint = null;
+        selectedCurve = undefined;
+        selectedPoint = undefined;
         render();
     }
 
-    function onDoubleClick(event: MouseEvent): void {
-        const target = event.target as Element;
-        if (target.closest('[data-edit-field]') !== null) return;
-        const curveElement = target.closest('[data-curve-index]');
-        if (curveElement === null) return;
-        const curveIndex = Number(curveElement.getAttribute('data-curve-index'));
-        const point = svgPointToModel(event.clientX, event.clientY);
-        if ((point === null) || !insertPoint(model(), curveIndex, clampCoord(point.x))) {
-            return;
-        }
-
-        selectedCurve = curveIndex;
-        host.onCommit();
-    }
-
     function startDrag(handleIndex: number, event: PointerEvent): void {
-        if (selectedCurve === null || geom === null) return;
-        const point = handlePoints[handleIndex];
+        if (selectedCurve === undefined || geom === undefined) return;
+        const point = itemAt(handlePoints, handleIndex);
         if (point === undefined) return;
         selectedPoint = point;
         const curveIndex = selectedCurve;
@@ -802,17 +820,19 @@ export function createEditor(
         startGesture(event, {
             onMove: (state) => {
                 const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
-                if (mapped === null) return;
+                if (mapped === undefined) return;
                 const x =
-                    state.event.shiftKey || isSnapEnabled
+                    isSnapEnabled || state.event.shiftKey
                         ? nearestPhaseX(mapped.x, model().phases.length)
                         : mapped.x;
-                setPoint(model(), curveIndex, point, clampCoord(x), clampCoord(mapped.y));
+                didSetPoint(model(), curveIndex, point, clampCoord(x), clampCoord(mapped.y));
                 updateCurve(curveIndex);
                 repositionHandles();
                 host.onLive();
             },
-            onEnd: () => { host.onCommit(); },
+            onEnd: () => {
+                host.onCommit();
+            },
         });
         event.preventDefault();
     }
@@ -821,10 +841,10 @@ export function createEditor(
     Drag the selected curve's top line to translate the whole curve horizontally (rigid).
     */
     function startMoveCurve(curveIndex: number, event: PointerEvent): void {
-        const curve = model().curves[curveIndex];
+        const curve = itemAt(model().curves, curveIndex);
         if (curve === undefined) return;
         const start = svgPointToModel(event.clientX, event.clientY);
-        if (start === null) return;
+        if (start === undefined) return;
         const snapshot = curve.points.map((point) => ({ point, x0: point.x }));
         const minX = Math.min(...snapshot.map((s) => s.x0));
         const maxX = Math.max(...snapshot.map((s) => s.x0));
@@ -832,7 +852,7 @@ export function createEditor(
         startGesture(event, {
             onMove: (state) => {
                 const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
-                if (mapped === null) return;
+                if (mapped === undefined) return;
                 const dx = Math.max(-minX, Math.min(100 - maxX, mapped.x - start.x));
                 for (const s of snapshot) s.point.x = clampCoord(s.x0 + dx);
                 curve.points.sort((a, b) => a.x - b.x);
@@ -840,7 +860,9 @@ export function createEditor(
                 repositionHandles();
                 host.onLive();
             },
-            onEnd: () => { host.onCommit(); },
+            onEnd: () => {
+                host.onCommit();
+            },
         });
         event.preventDefault();
     }
@@ -851,7 +873,7 @@ export function createEditor(
      * ✕ revealed on hover (see render.ts) is the single way to remove a phase.
      */
     function startPhaseInteraction(index: number, element: SVGElement, event: PointerEvent): void {
-        if (svg === null || geom === null) return;
+        if (svg === undefined || geom === undefined) return;
         const g = geom;
         const currentSvg = svg;
 
@@ -867,7 +889,8 @@ export function createEditor(
             threshold: 6,
             onMove: (state) => {
                 const p = toSvg(state.event.clientX, state.event.clientY);
-                element.setAttribute('x', String(Math.min(g.plotX1, Math.max(g.plotX0, p.x))));
+                const x = Math.min(g.plotX1, Math.max(g.plotX0, p.x));
+                element.setAttribute('x', String(x));
             },
             onEnd: (state) => {
                 // Releasing without dragging edits the label text.
@@ -888,7 +911,7 @@ export function createEditor(
                     best = distance;
                     targetIndex = index_;
                 }
-                if (reorderPhase(model(), index, targetIndex)) host.onCommit();
+                if (didReorderPhase(model(), index, targetIndex)) host.onCommit();
                 else render();
             },
         });
@@ -904,7 +927,7 @@ export function createEditor(
      * (see render.ts) is the single way to remove an event.
      */
     function startEventInteraction(index: number, element: SVGElement, event: PointerEvent): void {
-        const target = model().events[index];
+        const target = itemAt(model().events, index);
         if (target === undefined) return;
 
         startGesture(event, {
@@ -912,9 +935,9 @@ export function createEditor(
             onMove: (state) => {
                 if (!state.moved) return;
                 const mapped = svgPointToModel(state.event.clientX, state.event.clientY);
-                if (mapped === null) return;
+                if (mapped === undefined) return;
                 const x =
-                    state.event.shiftKey || isSnapEnabled
+                    isSnapEnabled || state.event.shiftKey
                         ? nearestBoundaryX(mapped.x, model().phases.length)
                         : mapped.x;
                 target.x = clampCoord(x);
@@ -928,7 +951,7 @@ export function createEditor(
                     return;
                 }
                 // Commit the final position (re-sorts the event list).
-                setEventX(model(), target, target.x);
+                didSetEventX(model(), target, target.x);
                 host.onCommit();
             },
         });
@@ -942,7 +965,7 @@ export function createEditor(
     /**
     Open picker, if any, so a second click can close it (programmatic clicks don't toggle).
     */
-    let activePicker: { input: HTMLInputElement; index: number } | null = null;
+    let activePicker: { input: HTMLInputElement; index: number } | undefined;
 
     /**
      * The legend swatch is the curve's color control. A transparent native `<input type="color">`
@@ -951,17 +974,19 @@ export function createEditor(
      * swatch again closes the stuck-open picker instead of dead-ending.
      */
     function openSwatchPicker(index: number): void {
-        const swatch = svg?.querySelector(`rect[data-swatch-index="${CSS.escape(index)}"]`);
-        if (!(swatch instanceof SVGRectElement) || geom === null) return;
-        const curve = model().curves[index];
+        const swatch = svg?.querySelector(
+            `rect[data-swatch-index="${CSS.escape(String(index))}"]`
+        );
+        if (geom === undefined || !(swatch instanceof SVGRectElement)) return;
+        const curve = itemAt(model().curves, index);
         if (curve === undefined) return;
 
         // Opening any swatch closes a previously stuck-open picker (programmatic clicks don't
         // toggle); clicking the *same* swatch again just closes it rather than reopening.
-        if (activePicker !== null) {
+        if (activePicker !== undefined) {
             const isSameSwatch = activePicker.index === index;
             const stale = activePicker.input;
-            activePicker = null;
+            activePicker = undefined;
             stale.remove();
             if (isSameSwatch) return;
         }
@@ -976,15 +1001,16 @@ export function createEditor(
         input.className = 'inline-color';
         // Seed from the color the swatch actually SHOWS: palette styles override the stored
         // curve color, and picking should start from what the user sees, not from stale data.
-        const seed = curve.colorCustom === true
-            ? curve.color
-            : effectiveCurveSwatchColor(geom.style, curve, index, geom.dark);
+        const seed =
+            curve.colorCustom === true
+                ? curve.color
+                : effectiveCurveSwatchColor(geom.style, curve, index, geom.dark);
         input.value = /^#[0-9a-f]{6}$/i.test(seed) ? seed : '#000000';
         input.style.position = 'absolute';
-        input.style.left = `${Math.max(0, box.left - canvasRect.left + canvasElement.scrollLeft - (overlaySize - box.width) / 2)}px`;
-        input.style.top = `${Math.max(0, box.top - canvasRect.top + canvasElement.scrollTop - (overlaySize - box.height) / 2)}px`;
-        input.style.width = `${overlaySize}px`;
-        input.style.height = `${overlaySize}px`;
+        input.style.left = `${String(Math.max(0, box.left - canvasRect.left + canvasElement.scrollLeft - (overlaySize - box.width) / 2))}px`;
+        input.style.top = `${String(Math.max(0, box.top - canvasRect.top + canvasElement.scrollTop - (overlaySize - box.height) / 2))}px`;
+        input.style.width = `${String(overlaySize)}px`;
+        input.style.height = `${String(overlaySize)}px`;
         canvasElement.append(input);
 
         let isDone = false;
@@ -992,18 +1018,13 @@ export function createEditor(
             if (isDone) return;
             isDone = true;
             canvasElement.removeEventListener('pointerdown', canvasGuard);
-            if (activePicker !== null && activePicker.input === input) activePicker = null;
+            if (activePicker?.input === input) activePicker = undefined;
             input.remove();
         };
         const commit = (): void => {
             if (isDone) return;
             finish();
             host.onCommit();
-        };
-        // Swallow the gesture that opened the picker (and any later canvas click) so the canvas
-        // handler never fights the native popup; clicking elsewhere closes the picker via blur.
-        const canvasGuard = (event: PointerEvent): void => {
-            event.stopPropagation();
         };
         input.addEventListener('input', () => {
             curve.color = input.value;
@@ -1032,14 +1053,12 @@ export function createEditor(
      * for any row count. Release reorders the model once.
      */
     function startLegendDrag(curveIndex: number, event: PointerEvent): void {
-        if (svg === null || geom === null) return;
+        if (svg === undefined || geom === undefined) return;
         const currentSvg = svg;
         const blocks = [...currentSvg.querySelectorAll('.legend-block')] as SVGGElement[];
         // Display slot of the dragged curve (blocks are rendered front-most first).
-        const index = blocks.findIndex(
-            (b) => Number(b.getAttribute('data-curve-index')) === curveIndex
-        );
-        const dragged = blocks[index];
+        const index = blocks.findIndex((b) => Number(b.dataset.curveIndex) === curveIndex);
+        const dragged = itemAt(blocks, index);
         if (dragged === undefined) return;
         // Only the row being dragged keeps its hover affordances; others stop reacting mid-drag.
         currentSvg.classList.add('legend-dragging');
@@ -1074,7 +1093,7 @@ export function createEditor(
                 let shift = 0;
                 if (index < targetIndex && index_ > index && index_ <= targetIndex) shift = -1;
                 if (index > targetIndex && index_ >= targetIndex && index_ < index) shift = 1;
-                block.style.transform = shift === 0 ? '' : `translateY(${shift * shiftPx}px)`;
+                block.style.transform = shift === 0 ? '' : `translateY(${String(shift * shiftPx)}px)`;
             }
         };
 
@@ -1090,7 +1109,7 @@ export function createEditor(
         startGesture(event, {
             threshold: 4,
             onMove: (state) => {
-                dragged.style.transform = `translateY(${state.dy}px)`;
+                dragged.style.transform = `translateY(${String(state.dy)}px)`;
                 dragged.classList.add('dragging');
                 applyPreview(targetFor(state.event.clientY));
             },
@@ -1104,7 +1123,7 @@ export function createEditor(
                 const n = blocks.length;
                 const from = n - 1 - index;
                 const to = n - 1 - targetSlot;
-                if (!reorderCurve(model(), from, to)) {
+                if (!didReorderCurve(model(), from, to)) {
                     return;
                 }
 
@@ -1123,9 +1142,9 @@ export function createEditor(
     */
     function fieldBinding(
         element: SVGElement
-    ): { value: string; multiline: boolean; write: (next: string) => void } | null {
-        const field = element.getAttribute('data-edit-field');
-        if (field === null) return null;
+    ): { value: string; multiline: boolean; write: (next: string) => void } | undefined {
+        const field = element.dataset.editField;
+        if (field === undefined) return undefined;
         const m = model();
         switch (field) {
             case 'title': {
@@ -1139,14 +1158,16 @@ export function createEditor(
                 };
             }
             case 'phase': {
-                const index = Number(element.getAttribute('data-phase-index'));
-                const phase = m.phases[index];
-                return phase === undefined ? null : { value: phase.label, multiline: false, write: (v) => (phase.label = v) };
+                const index = Number(element.dataset.phaseIndex);
+                const phase = itemAt(m.phases, index);
+                return phase === undefined
+                    ? undefined
+                    : { value: phase.label, multiline: false, write: (v) => (phase.label = v) };
             }
             case 'event': {
-                const index = Number(element.getAttribute('data-event-index'));
-                const event = m.events[index];
-                if (event === undefined) return null;
+                const index = Number(element.dataset.eventIndex);
+                const event = itemAt(m.events, index);
+                if (event === undefined) return undefined;
                 // One block for the whole callout: first line is the label, the rest are the note.
                 return {
                     value: event.note === '' ? event.label : `${event.label}\n${event.note}`,
@@ -1159,14 +1180,16 @@ export function createEditor(
                 };
             }
             case 'curve-label': {
-                const index = Number(element.getAttribute('data-curve-index'));
-                const curve = m.curves[index];
-                return curve === undefined ? null : { value: curve.label, multiline: false, write: (v) => (curve.label = v) };
+                const index = Number(element.dataset.curveIndex);
+                const curve = itemAt(m.curves, index);
+                return curve === undefined
+                    ? undefined
+                    : { value: curve.label, multiline: false, write: (v) => (curve.label = v) };
             }
             case 'legend-block': {
-                const index = Number(element.getAttribute('data-curve-index'));
-                const curve = m.curves[index];
-                if (curve === undefined) return null;
+                const index = Number(element.dataset.curveIndex);
+                const curve = itemAt(m.curves, index);
+                if (curve === undefined) return undefined;
                 // One block for the whole legend row: first line is the label, the rest are notes.
                 return {
                     value: curve.notes === '' ? curve.label : `${curve.label}\n${curve.notes}`,
@@ -1179,54 +1202,54 @@ export function createEditor(
                 };
             }
             default: {
-                return null;
+                return undefined;
             }
         }
     }
 
     function startInline(element: SVGElement): void {
         const binding = fieldBinding(element);
-        if (binding === null) return;
+        if (binding === undefined) return;
         openInlineInput(element, binding.value, binding.multiline, binding.write);
     }
 
     function openInlineInput(
         element: SVGElement,
         value: string,
-        multiline: boolean,
+        isMultiline: boolean,
         write: (next: string) => void
     ): void {
         const canvasRect = canvasElement.getBoundingClientRect();
         const elementRect = element.getBoundingClientRect();
-        const input = (
-            multiline ? document.createElement('textarea') : document.createElement('input')
+        const input = document.createElement(
+            isMultiline ? 'textarea' : 'input'
         ) as HTMLTextAreaElement;
-        input.className = 'inline-editor' + (multiline ? ' multiline' : '');
+        input.className = 'inline-editor' + (isMultiline ? ' multiline' : '');
         input.value = value;
         input.style.position = 'absolute';
-        input.style.left = `${Math.max(0, elementRect.left - canvasRect.left + canvasElement.scrollLeft - 4)}px`;
-        input.style.top = `${Math.max(0, elementRect.top - canvasRect.top + canvasElement.scrollTop - 4)}px`;
-        input.style.minWidth = `${Math.max(140, elementRect.width + 48)}px`;
-        if (multiline) {
-            input.style.height = `${Math.max(64, elementRect.height + 28)}px`;
+        input.style.left = `${String(Math.max(0, elementRect.left - canvasRect.left + canvasElement.scrollLeft - 4))}px`;
+        input.style.top = `${String(Math.max(0, elementRect.top - canvasRect.top + canvasElement.scrollTop - 4))}px`;
+        input.style.minWidth = `${String(Math.max(140, elementRect.width + 48))}px`;
+        if (isMultiline) {
+            input.style.height = `${String(Math.max(64, elementRect.height + 28))}px`;
         }
         canvasElement.append(input);
         input.focus();
-        if (!multiline) input.select();
+        if (!isMultiline) input.select();
 
         let isDone = false;
         const commit = (): void => {
             if (isDone) return;
             isDone = true;
             write(input.value);
-            activeInline = null;
+            activeInline = undefined;
             input.remove();
             host.onCommit();
         };
         const cancel = (): void => {
             if (isDone) return;
             isDone = true;
-            activeInline = null;
+            activeInline = undefined;
             input.remove();
             render();
         };
@@ -1240,7 +1263,7 @@ export function createEditor(
                 cancel();
             } else if (
                 keyEvent.key === 'Enter' &&
-                (!multiline || keyEvent.ctrlKey || keyEvent.metaKey)
+                (!isMultiline || keyEvent.ctrlKey || keyEvent.metaKey)
             ) {
                 keyEvent.preventDefault();
                 input.removeEventListener('blur', commit);
@@ -1253,39 +1276,45 @@ export function createEditor(
 
     function deleteSelected(): void {
         const m = model();
-        if (selectedPoint !== null && selectedCurve !== null) {
-            const curve = m.curves[selectedCurve];
+        if (selectedPoint !== undefined && selectedCurve !== undefined) {
+            const curve = itemAt(m.curves, selectedCurve);
             if (curve && canRemovePoint(curve)) {
-                removePoint(m, selectedCurve, curve.points.indexOf(selectedPoint));
-                selectedPoint = null;
+                didRemovePoint(m, selectedCurve, curve.points.indexOf(selectedPoint));
+                selectedPoint = undefined;
                 host.onCommit();
                 return;
             }
         }
-        if (selectedCurve === null || !removeCurve(m, selectedCurve)) {
+        if (selectedCurve === undefined || !didRemoveCurve(m, selectedCurve)) {
             return;
         }
 
-        selectedCurve = null;
-        selectedPoint = null;
+        selectedCurve = undefined;
+        selectedPoint = undefined;
         host.onCommit();
     }
 
     function clearSelection(): void {
-        if (selectedCurve === null && selectedPoint === null) return;
-        selectedCurve = null;
-        selectedPoint = null;
+        if (selectedCurve === undefined && selectedPoint === undefined) return;
+        selectedCurve = undefined;
+        selectedPoint = undefined;
         render();
     }
 
-    function nudge(dx: number, dy: number): boolean {
-        if (selectedPoint === null || selectedCurve === null) return false;
-        const curve = model().curves[selectedCurve];
+    function didNudge(dx: number, dy: number): boolean {
+        if (selectedPoint === undefined || selectedCurve === undefined) return false;
+        const curve = itemAt(model().curves, selectedCurve);
         if (!curve?.points.includes(selectedPoint)) return false;
-        setPoint(model(), selectedCurve, selectedPoint, selectedPoint.x + dx, selectedPoint.y + dy);
+        didSetPoint(
+            model(),
+            selectedCurve,
+            selectedPoint,
+            selectedPoint.x + dx,
+            selectedPoint.y + dy
+        );
         host.onCommit();
         return true;
     }
 
-    return { render, deleteSelected, clearSelection, nudge };
+    return { render, deleteSelected, clearSelection, nudge: didNudge };
 }

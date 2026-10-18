@@ -32,11 +32,12 @@ test.describe('REQ-02 light/dark theme', () => {
         await gotoApp(page);
         await page.locator('#btn-theme').click();
         const chosen = await page.locator('html').getAttribute('data-theme');
+        if (chosen === null) throw new Error('the theme toggle recorded no theme');
 
         await page.reload();
         await waitForGraph(page);
 
-        await expect(page.locator('html')).toHaveAttribute('data-theme', chosen!);
+        await expect(page.locator('html')).toHaveAttribute('data-theme', chosen);
         // Theme is chrome, not model data: it must never appear in the hash.
         expect(await currentHash(page)).not.toContain('theme');
     });
@@ -66,12 +67,18 @@ test.describe('REQ-03 visual style system', () => {
         await openHeaderMenu(page, 'btn-style');
         await page.locator('#style-menu button', { hasText: 'Cartoon' }).click();
 
-        await expect.poll(async () => (await currentHash(page)).includes('s=toon')).toBe(true);
+        await expect.poll(async () => {
+            const hash = await currentHash(page);
+            return hash.includes('s=toon');
+        }).toBe(true);
 
         await openHeaderMenu(page, 'btn-style');
         await page.locator('#style-menu button', { hasText: 'Classic' }).click();
 
-        await expect.poll(async () => (await currentHash(page)).includes('s=')).toBe(false);
+        await expect.poll(async () => {
+            const hash = await currentHash(page);
+            return hash.includes('s=');
+        }).toBe(false);
     });
 
     test('a style in the URL wins over the stored preference', async ({ page }) => {

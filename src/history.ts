@@ -32,13 +32,13 @@ export class History {
     }
 
     /**
-    Step back/forward and return the restored model, or null when at a boundary.
+    Step back/forward and return the restored model, or undefined when at a boundary.
     */
-    step(offset: -1 | 1): GraphModel | null {
+    step(offset: -1 | 1): GraphModel | undefined {
         const target = this.index + offset;
-        if (target < 0 || target >= this.snapshots.length) return null;
+        if (target < 0 || target >= this.snapshots.length) return undefined;
         const parsed = parseModel(JSON.parse(this.snapshots[target]));
-        if (parsed === null) return null;
+        if (parsed === undefined) return undefined;
         this.index = target;
         return parsed;
     }

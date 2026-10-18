@@ -12,7 +12,7 @@ import type { GraphStyle } from './styles/types';
 
 function faceRule(family: string, weight: number, source: string): string {
     return (
-        `@font-face { font-family: '${family}'; font-style: normal; font-weight: ${weight}; ` +
+        `@font-face { font-family: '${family}'; font-style: normal; font-weight: ${String(weight)}; ` +
         `src: url(${source}) format('woff2'); }`
     );
 }
@@ -30,7 +30,7 @@ const injectedFaces = new Set<string>();
  * canvas measurement would silently use the fallback stack.
  */
 export function ensureFontFaces(keys: readonly (readonly [string, number])[]): void {
-    let element = document.querySelector('#bundled-fonts') as HTMLStyleElement | null;
+    let element = document.querySelector<HTMLStyleElement>('#bundled-fonts');
     if (element === null) {
         element = document.createElement('style');
         element.id = 'bundled-fonts';
@@ -39,7 +39,7 @@ export function ensureFontFaces(keys: readonly (readonly [string, number])[]): v
     for (const [family, weight] of keys) {
         const face = findFace(family, weight);
         if (face === undefined) continue;
-        const key = `${family}:${weight}`;
+        const key = `${family}:${String(weight)}`;
         if (injectedFaces.has(key)) continue;
         injectedFaces.add(key);
         element.textContent +=
@@ -56,27 +56,32 @@ const dataUriCache = new Map<string, Promise<string>>();
 
 function bytesToBase64(bytes: Uint8Array): string {
     let binary = '';
-    const chunk = 0x80_00; // keep String.fromCharCode's argument count safe
+    const chunk = 0x80_00; // keep String.fromCodePoint's argument count safe
     for (let index = 0; index < bytes.length; index += chunk) {
-        binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+        binary += String.fromCodePoint(...bytes.subarray(index, index + chunk));
     }
     return btoa(binary);
 }
 
-function fontDataUri(url: string): Promise<string> {
+async function fontDataUri(url: string): Promise<string> {
     const cached = dataUriCache.get(url);
     if (cached !== undefined) return cached;
-    const pending = fetch(url)
-        .then((response) => {
-            if (!response.ok) {
-                throw new Error(`Could not load font '${url}' (${response.status})`);
-            }
-            return response.arrayBuffer();
-        })
-        .then((buffer) => `data:font/woff2;base64,${bytesToBase64(new Uint8Array(buffer))}`);
+    const pending = (async (): Promise<string> => {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Could not load font '${url}' (${String(response.status)})`);
+        }
+        const buffer = await response.arrayBuffer();
+        return `data:font/woff2;base64,${bytesToBase64(new Uint8Array(buffer))}`;
+    })();
     dataUriCache.set(url, pending);
-    pending.catch(() => dataUriCache.delete(url)); // let a later export retry a failed fetch
-    return pending;
+    try {
+        return await pending;
+    } catch (error) {
+        // Drop the failed entry so a later export retries the fetch.
+        dataUriCache.delete(url);
+        throw error;
+    }
 }
 
 /**
@@ -106,9 +111,12 @@ export async function loadStyleFonts(style: GraphStyle): Promise<void> {
     ensureFontFaces(style.typography.fonts);
     const sample = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:;!?()&/%-—’';
     await Promise.all(
-        style.typography.fonts.map(
-            ([family, weight]) =>
-                document.fonts.load(`${weight} 16px "${family}"`, sample).catch(() => {}) // offline/failed: fallback stack still renders
-        )
+        style.typography.fonts.map(async ([family, weight]) => {
+            try {
+                await document.fonts.load(`${String(weight)} 16px "${family}"`, sample);
+            } catch {
+                // offline/failed: the fallback stack still renders
+            }
+        })
     );
 }
