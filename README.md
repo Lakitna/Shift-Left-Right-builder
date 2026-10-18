@@ -74,6 +74,10 @@ and must not share a baseline. They describe **the build as it exists today** â€
 baseline, not a statement of desired behaviour. When a change is meant to alter rendering, re-seed
 deliberately:
 
+Each matching Chromium and Firefox baseline is also compared during the visual suite. The comparison
+ignores per-channel differences of 24 or less and fails when more than 3% of pixels differ beyond
+that tolerance.
+
 ```sh
 npm run test:e2e:update
 ```
