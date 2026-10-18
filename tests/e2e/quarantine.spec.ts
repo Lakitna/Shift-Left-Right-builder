@@ -14,7 +14,7 @@ test.describe('REQ-Q quarantined interactions', () => {
         await gotoApp(page);
         await expect(page.locator('.event-label')).toHaveCount(1);
 
-        // Historical defect (ISSUES.md #7): the pointerdown handler replaces the whole SVG, which
+        // Historical interaction issue: the pointerdown handler replaces the whole SVG, which
         // used to detach the element mid-click — Playwright's actionability re-check never settled,
         // so the click timed out or double-fired. That no longer reproduces on the current
         // Playwright, so this is a regression guard rather than a workaround. The suite still drives

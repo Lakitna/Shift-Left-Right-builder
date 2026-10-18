@@ -157,7 +157,9 @@ graph editor, and how this app is expected to satisfy them:
   essential to the meaning, so it keeps its aspect rather than reflowing.
 - **1.4.12 Text spacing** — increasing line/letter/word spacing does not clip the labels.
 - **2.1.1 Keyboard / 2.4.3 Focus order / 2.4.7 Focus visible** — every control is reachable and
-  operable by keyboard, in a sensible order, with a visible focus indicator.
+  operable by keyboard, in a sensible order, with a visible focus indicator. Exception: selecting
+  and manipulating graph objects requires pointer interaction; keyboard shortcuts operate on objects
+  only after pointer selection. Keyboard navigation and editing of graph objects are not required.
 - **2.4.11 Focus not obscured (minimum)** — the focused control is not hidden behind the toolbar or
   an open menu.
 - **2.5.8 Target size (minimum)** — every pointer target is at least **24 × 24 CSS px**, or has

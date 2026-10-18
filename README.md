@@ -101,14 +101,12 @@ actionability timeouts or a `RenderCompositorSWGL` crash, re-run before diagnosi
 - **`tests/REQUIREMENTS.md`** — the requirement list (REQ-01…REQ-14) plus the map from each
   requirement to the specs that cover it. Requirement ids also appear in the `describe()` names, so
   `npx playwright test -g REQ-05` runs one requirement.
-- **`ISSUES.md`** — the open-bug handover list: what is broken, where, which test demonstrates it,
-  and how to fix it.
 
 ### Conventions
 
 - The suites assert **desired** behaviour, so a red test is a real finding rather than a stale
-  expectation. Known defects are either left red deliberately or marked with `test.fail(...)` and
-  listed in `ISSUES.md`, so a green run still means what it says.
+  expectation. Interaction edge cases that need special handling are covered explicitly in the GUI
+  specs.
 - Assert on what a **user** can observe. The GUI suite drives the graph with real `page.mouse` input
   and reads real downloaded bytes, rather than poking at internal state.
 - `tests/e2e/helpers.ts` carries the app-specific traps (scrolling below the fold, the debounced URL
