@@ -455,6 +455,8 @@ export function createEditor(
         const g = geom; // capture the non-null geometry for use inside callbacks
         const overlay = svgElement('g', { class: 'editing-ui' });
         const accumulator = accent();
+        const canvas = g.style.canvas[isDarkMode() ? 'dark' : 'light'];
+        const badgeForeground = canvas.badgeForeground ?? accumulator;
 
         if (selectedCurve === undefined) {
             handlePoints = [];
@@ -500,7 +502,7 @@ export function createEditor(
                     const midY = Math.round(rawMid.y);
                     const mid = g.toPx(midX, midY);
                     overlay.append(
-                        addBadge(mid.x, mid.y, accumulator, {
+                        addBadge(mid.x, mid.y, badgeForeground, {
                             class: 'insert-handle',
                             'data-insert-x': midX,
                             'data-insert-y': midY,
@@ -514,7 +516,7 @@ export function createEditor(
         // "+" at the end of the phase row: WYSIWYG add-phase (append; drag to reposition).
         if (canAddPhase(m)) {
             overlay.append(
-                addBadge(g.plotX1 + 28, g.phaseLabelY - 5, accumulator, {
+                addBadge(g.plotX1 + 28, g.phaseLabelY - 5, badgeForeground, {
                     class: 'phase-add',
                     'data-phase-add': 1,
                 })
@@ -974,9 +976,7 @@ export function createEditor(
      * swatch again closes the stuck-open picker instead of dead-ending.
      */
     function openSwatchPicker(index: number): void {
-        const swatch = svg?.querySelector(
-            `rect[data-swatch-index="${CSS.escape(String(index))}"]`
-        );
+        const swatch = svg?.querySelector(`rect[data-swatch-index="${CSS.escape(String(index))}"]`);
         if (geom === undefined || !(swatch instanceof SVGRectElement)) return;
         const curve = itemAt(model().curves, index);
         if (curve === undefined) return;
@@ -1093,7 +1093,8 @@ export function createEditor(
                 let shift = 0;
                 if (index < targetIndex && index_ > index && index_ <= targetIndex) shift = -1;
                 if (index > targetIndex && index_ >= targetIndex && index_ < index) shift = 1;
-                block.style.transform = shift === 0 ? '' : `translateY(${String(shift * shiftPx)}px)`;
+                block.style.transform =
+                    shift === 0 ? '' : `translateY(${String(shift * shiftPx)}px)`;
             }
         };
 

@@ -338,7 +338,12 @@ async function scrollIntoViewport(page: Page, locator: Locator): Promise<void> {
         const dy = centreY < 0 || centreY > viewport.height ? centreY - viewport.height / 2 : 0;
         if (dx === 0 && dy === 0) return;
 
-        await page.evaluate((delta) => { window.scrollBy(delta.dx, delta.dy); }, { dx, dy });
+        await page.evaluate(
+            (delta) => {
+                window.scrollBy(delta.dx, delta.dy);
+            },
+            { dx, dy }
+        );
         await page.waitForTimeout(50);
     }
 }

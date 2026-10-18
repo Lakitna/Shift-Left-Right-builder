@@ -59,6 +59,7 @@ export const toonStyle: GraphStyle = {
             // night) — it reads as seams between the saturated fills and borders the white
             // bubbles. The title turns candy yellow so the sheet still feels lit up.
             background: '#191d2a',
+            badgeForeground: '#0d0f16',
             axis: '#e8ecf5',
             grid: '#232a3d',
             phaseTick: '#2c3450',

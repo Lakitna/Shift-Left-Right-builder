@@ -13,8 +13,8 @@ npm run lint        # strict ESLint (typescript-eslint strictTypeChecked + eslin
 **Status: items 1–7, 9 and 10 are fixed and both suites are green** — `npm run test:unit` is 97/97,
 `npm run test:e2e` is 202/202 across Chromium and Firefox, and `npm run lint` reports zero problems.
 Each fixed item keeps its original diagnosis with a **Resolved** note describing the change, so the
-reasoning survives. Item **#11** is deliberately still open. (#8 was a test bug rather than a defect —
-see the note in its place.)
+reasoning survives. Item **#11** is deliberately still open. (#8 was a test bug rather than a defect
+— see the note in its place.)
 
 ---
 
@@ -34,7 +34,7 @@ see the note in its place.)
 - **Resolved:** the manual writer is gone. `pipeBytes` now wraps the bytes in a `Response`, pipes
   that body through the transform with `ReadableStream#pipeThrough`, and reads the result back with
   `arrayBuffer()`. `pipeThrough` marks its internal piping promise as handled and errors the output
-  stream, so a corrupt payload arrives as one *handled* rejection on `decodeModel`'s existing
+  stream, so a corrupt payload arrives as one _handled_ rejection on `decodeModel`'s existing
   `catch` — no `void`-ed promises, no unhandled rejection.
 
 ## 2. WCAG 2.2 AA: the `hint` text colour is below 4.5:1 in four styles
@@ -76,8 +76,8 @@ see the note in its place.)
   (EXPECTED RED)
 - **Decision needed first:** either reject (strict, matching the documentation) or relax the
   documentation. The test currently asserts the strict reading.
-- **Resolved:** the strict reading won. `parseCurve` rejects a *present* `opacity` that is not a
-  number, while an *absent* one still falls back to `DEFAULT_OPACITY` — so the documented
+- **Resolved:** the strict reading won. `parseCurve` rejects a _present_ `opacity` that is not a
+  number, while an _absent_ one still falls back to `DEFAULT_OPACITY` — so the documented
   all-or-nothing contract holds and the lenient repair is gone.
 
 ## 4. `phaseBoundaries(0)` returns `[NaN]`
@@ -184,9 +184,10 @@ unless you check the pointer stream.
   already correct and stays green.
 - **Fix:** measure with the same layout options as the export (pass `attribution: true`), or have
   both paths call one shared sheet-measuring helper so they cannot drift again.
-- **Resolved:** `measurePngSheet` passes `attribution: true` to `computeLayout` — the same option the
-  real export draws with — with a comment tying the two together so they cannot silently drift. The
-  `test.fail(true, …)` marker in `tests/e2e/export.spec.ts` is gone and the test asserts for real.
+- **Resolved:** `measurePngSheet` passes `attribution: true` to `computeLayout` — the same option
+  the real export draws with — with a comment tying the two together so they cannot silently drift.
+  The `test.fail(true, …)` marker in `tests/e2e/export.spec.ts` is gone and the test asserts for
+  real.
 
 ## 10. The two toolbar checkboxes are 22px tall, under the 24px AA minimum
 
@@ -221,8 +222,9 @@ unless you check the pointer stream.
 - **Fix direction:** give curves, handles and phase labels a `tabindex` plus a focus style, or offer
   a keyboard-accessible list-based way to choose a curve and point (a roving `tabindex` over
   `.point-handle` is the usual pattern). This needs a design decision rather than just markup.
-- **Left open on purpose** (2026-10-17): both directions above are viable and the choice is a product
-  decision — the item stays open rather than being guessed at. Everything else in this file is done.
+- **Left open on purpose** (2026-10-17): both directions above are viable and the choice is a
+  product decision — the item stays open rather than being guessed at. Everything else in this file
+  is done.
 
 ---
 

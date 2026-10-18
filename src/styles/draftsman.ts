@@ -55,6 +55,7 @@ export const draftsmanStyle: GraphStyle = {
         },
         dark: {
             background: '#17181a',
+            badgeForeground: '#17181a',
             axis: '#f2efe6',
             grid: '#2a2b2e',
             phaseTick: '#33343a',

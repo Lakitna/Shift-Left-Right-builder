@@ -2,10 +2,10 @@ import { expect, test } from '@playwright/test';
 
 import {
     clickRevealedBadge,
-    isDragCurveBody,
     dragElement,
     gotoApp,
     handleX,
+    isDragCurveBody,
     mouseClick,
     phaseLabelX,
     selectCurve,

@@ -71,6 +71,10 @@ export interface StyleTypography {
 export interface CanvasPalette {
     background: string;
     /**
+    Foreground for the white circular "+" editing badges. Defaults to eventLabel.
+    */
+    badgeForeground?: string;
+    /**
     Axis lines + arrowheads.
     */
     axis: string;

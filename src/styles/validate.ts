@@ -17,9 +17,9 @@ export function relativeLuminance(hex: string): number {
     if (m === null) return 0;
     const n = Number.parseInt(m[1], 16);
     return (
-        0.2126 * channelLuminance((n >> 16) & 0xFF) +
-        0.7152 * channelLuminance((n >> 8) & 0xFF) +
-        0.0722 * channelLuminance(n & 0xFF)
+        0.2126 * channelLuminance((n >> 16) & 0xff) +
+        0.7152 * channelLuminance((n >> 8) & 0xff) +
+        0.0722 * channelLuminance(n & 0xff)
     );
 }
 
@@ -51,8 +51,7 @@ export interface StyleIssue {
  */
 export function validateStyle(style: GraphStyle, isStrictText: boolean): StyleIssue[] {
     const issues: StyleIssue[] = [];
-    const isFillsCarryBoundaries =
-        style.stroke.curveOutline === 0 && style.fills.mode === 'solid';
+    const isFillsCarryBoundaries = style.stroke.curveOutline === 0 && style.fills.mode === 'solid';
     for (const theme of ['light', 'dark'] as const) {
         const palette = style.canvas[theme];
         const fills = style.curves.palette[theme];

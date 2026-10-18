@@ -82,7 +82,8 @@ describe('REQ-04 undo/redo history', () => {
 
         const restored = history.step(-1);
         expect(restored).not.toBe(original);
-        if (restored === undefined) throw new Error('history.step(-1) should have returned a model');
+        if (restored === undefined)
+            throw new Error('history.step(-1) should have returned a model');
         restored.curves[0].points[0].y = 42;
         expect(original.curves[0].points[0].y).toBe(0);
     });

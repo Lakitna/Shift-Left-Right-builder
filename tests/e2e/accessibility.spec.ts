@@ -16,13 +16,13 @@ Identifies the focused element in a way that reads well in an assertion failure.
 async function focusedLabel(page: Page): Promise<string> {
     return page.evaluate(() => {
         const element = document.activeElement as HTMLElement | null;
-        return element === null ? '' : (
-            element.id ||
-            (element.getAttribute('aria-label') ?? '') ||
-            (element.getAttribute('title') ?? '') ||
-            element.textContent.trim().slice(0, 40) ||
-            element.tagName
-        );
+        return element === null
+            ? ''
+            : element.id ||
+                  (element.getAttribute('aria-label') ?? '') ||
+                  (element.getAttribute('title') ?? '') ||
+                  element.textContent.trim().slice(0, 40) ||
+                  element.tagName;
     });
 }
 

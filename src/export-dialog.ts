@@ -92,7 +92,9 @@ export function createExportDialog<T extends CommonExportValues>(
 } {
     let current = options.loadSettings();
 
-    element.cancelButton.addEventListener('click', () => { element.dialog.close(); });
+    element.cancelButton.addEventListener('click', () => {
+        element.dialog.close();
+    });
     closeOnBackdrop(element.dialog);
     for (const control of [
         element.transparentInput,
@@ -100,7 +102,9 @@ export function createExportDialog<T extends CommonExportValues>(
         element.themeLightRadio,
         element.themeDarkRadio,
     ]) {
-        control.addEventListener('change', () => { options.onOptionsChanged(); });
+        control.addEventListener('change', () => {
+            options.onOptionsChanged();
+        });
     }
     element.downloadButton.addEventListener('click', () => {
         current = options.readCommon(current, {
@@ -124,7 +128,8 @@ export function createExportDialog<T extends CommonExportValues>(
             element.filenameInput.value = settings.filename;
             element.transparentInput.checked = settings.transparent;
             element.legendInput.checked = settings.includeLegend;
-            (settings.theme === 'dark' ? element.themeDarkRadio : element.themeLightRadio).checked = true;
+            (settings.theme === 'dark' ? element.themeDarkRadio : element.themeLightRadio).checked =
+                true;
             if (options.applyExtraSettings) options.applyExtraSettings(settings);
             element.dialog.showModal();
             element.filenameInput.focus();

@@ -20,7 +20,9 @@ export const PNG_MAX_WIDTH = 8000;
 export const PNG_DEFAULT_WIDTH = 1500;
 
 export function clampPngWidth(value: number): number {
-    return Number.isFinite(value) ? Math.min(PNG_MAX_WIDTH, Math.max(PNG_MIN_WIDTH, Math.round(value))) : PNG_DEFAULT_WIDTH;
+    return Number.isFinite(value)
+        ? Math.min(PNG_MAX_WIDTH, Math.max(PNG_MIN_WIDTH, Math.round(value)))
+        : PNG_DEFAULT_WIDTH;
 }
 
 function readJson(key: string): Record<string, unknown> | undefined {
@@ -90,8 +92,12 @@ function validateBase(
 ): Partial<ExportSettingsBase> {
     return {
         filename: textOr(stored.filename, fallback.filename),
-        transparent: isStoredBoolean(stored.transparent) ? stored.transparent : fallback.transparent,
-        includeLegend: isStoredBoolean(stored.includeLegend) ? stored.includeLegend : fallback.includeLegend,
+        transparent: isStoredBoolean(stored.transparent)
+            ? stored.transparent
+            : fallback.transparent,
+        includeLegend: isStoredBoolean(stored.includeLegend)
+            ? stored.includeLegend
+            : fallback.includeLegend,
         theme: themeOr(stored.theme, fallback.theme),
     };
 }

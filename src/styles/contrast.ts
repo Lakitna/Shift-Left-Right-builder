@@ -55,6 +55,7 @@ export const contrastStyle: GraphStyle = {
         },
         dark: {
             background: '#000000',
+            badgeForeground: '#000000',
             axis: '#ffffff',
             grid: '#a6a6a6',
             phaseTick: '#a6a6a6',

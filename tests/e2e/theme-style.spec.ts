@@ -67,18 +67,22 @@ test.describe('REQ-03 visual style system', () => {
         await openHeaderMenu(page, 'btn-style');
         await page.locator('#style-menu button', { hasText: 'Cartoon' }).click();
 
-        await expect.poll(async () => {
-            const hash = await currentHash(page);
-            return hash.includes('s=toon');
-        }).toBe(true);
+        await expect
+            .poll(async () => {
+                const hash = await currentHash(page);
+                return hash.includes('s=toon');
+            })
+            .toBe(true);
 
         await openHeaderMenu(page, 'btn-style');
         await page.locator('#style-menu button', { hasText: 'Classic' }).click();
 
-        await expect.poll(async () => {
-            const hash = await currentHash(page);
-            return hash.includes('s=');
-        }).toBe(false);
+        await expect
+            .poll(async () => {
+                const hash = await currentHash(page);
+                return hash.includes('s=');
+            })
+            .toBe(false);
     });
 
     test('a style in the URL wins over the stored preference', async ({ page }) => {

@@ -255,7 +255,7 @@ function mulberry32(a: number): () => number {
         // `a` is only ever read through 32-bit bitwise operators below, so truncating here (instead
         // of wrapping to int32) produces exactly the same stream.
         a = Math.trunc(a);
-        a = Math.trunc(a + 0x6D_2B_79_F5);
+        a = Math.trunc(a + 0x6d_2b_79_f5);
         let t = Math.imul(a ^ (a >>> 15), 1 | a);
         t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
         return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
@@ -442,7 +442,12 @@ function fillDefs(style: GraphStyle, ink: string, model: GraphModel): SVGDefsEle
         if (pattern !== undefined && pattern.name !== 'none') {
             isAny = true;
             defs.append(
-                patternElement(`graph-pat-${String(index)}`, pattern.name, pattern.color, style.fills)
+                patternElement(
+                    `graph-pat-${String(index)}`,
+                    pattern.name,
+                    pattern.color,
+                    style.fills
+                )
             );
         }
         const gradient = effectiveCurveGradient(style, curve, index);
@@ -457,9 +462,7 @@ function fillDefs(style: GraphStyle, ink: string, model: GraphModel): SVGDefsEle
         });
         for (const [stopIndex, color] of gradient.stops.entries()) {
             const offset =
-                gradient.stops.length === 1
-                    ? 0
-                    : (stopIndex / (gradient.stops.length - 1)) * 100;
+                gradient.stops.length === 1 ? 0 : (stopIndex / (gradient.stops.length - 1)) * 100;
             const offsetPercent = `${String(Math.round(offset))}%`;
             grad.append(svgElement('stop', { offset: offsetPercent, 'stop-color': color }));
         }
@@ -553,14 +556,18 @@ export function computeLayout(model: GraphModel, options: RenderOptions): GraphG
 
     let cursor = legendTop;
     const legendRows: LegendRow[] = isIncludeLegend
-        ? model.curves.keys().toArray().toReversed().map((curveIndex) => {
-              const curve = model.curves[curveIndex];
-              const noteLines = wrapText(curve.notes, legendWidth, noteFont);
-              const height = labelLineH + noteLines.length * noteLineH + L.legendRowGap;
-              const row: LegendRow = { top: cursor, height, label: curve.label, noteLines };
-              cursor += height;
-              return row;
-          })
+        ? model.curves
+              .keys()
+              .toArray()
+              .toReversed()
+              .map((curveIndex) => {
+                  const curve = model.curves[curveIndex];
+                  const noteLines = wrapText(curve.notes, legendWidth, noteFont);
+                  const height = labelLineH + noteLines.length * noteLineH + L.legendRowGap;
+                  const row: LegendRow = { top: cursor, height, label: curve.label, noteLines };
+                  cursor += height;
+                  return row;
+              })
         : [];
 
     const legendBottom = legendRows.length > 0 ? cursor : legendTop;
@@ -1449,10 +1456,15 @@ export function renderGraphSvg(model: GraphModel, options: RenderOptions): Rende
     // WYSIWYG "add event": a "+" at the right end of the callout band (mirrors the phase-row "+").
     if (options.editing && model.events.length < MAX_EVENTS) {
         svg.append(
-            addBadge(geom.plotX1 + 28, geom.eventLabelY - 5, palette.eventLabel, {
-                class: 'event-add',
-                'data-event-add': 1,
-            })
+            addBadge(
+                geom.plotX1 + 28,
+                geom.eventLabelY - 5,
+                palette.badgeForeground ?? palette.eventLabel,
+                {
+                    class: 'event-add',
+                    'data-event-add': 1,
+                }
+            )
         );
     }
 

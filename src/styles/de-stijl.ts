@@ -55,6 +55,7 @@ export const deStijlStyle: GraphStyle = {
         },
         dark: {
             background: '#0b0b0b',
+            badgeForeground: '#050505',
             // The ink stays black for chips (they sit on paper-white plates); structural
             // lines turn paper so they stay visible on the night ground.
             axis: '#f4f1e8',

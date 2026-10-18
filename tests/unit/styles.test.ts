@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_STYLE_ID, STYLES, classicStyle, getStyle, isValidStyleId } from '../../src/styles';
+import { contrastRatio } from '../../src/styles/validate';
 
 const PUBLIC_STYLE_IDS = [
     'classic',
@@ -52,6 +53,18 @@ describe('REQ-03 style registry', () => {
             expect(typeof style.canvas.dark.background, style.id).toBe('string');
             expect(style.curves.palette.light.length, style.id).toBeGreaterThan(0);
             expect(style.curves.palette.dark.length, style.id).toBeGreaterThan(0);
+        }
+    });
+
+    it('dark editing badges contrast against their white background', () => {
+        for (const id of ['draftsman', 'toon', 'de-stijl', 'contrast']) {
+            const style = getStyle(id);
+            const foreground = style.canvas.dark.badgeForeground;
+
+            expect(foreground, id).toBeDefined();
+            expect(contrastRatio(foreground ?? '#ffffff', '#ffffff'), id).toBeGreaterThanOrEqual(
+                4.5
+            );
         }
     });
 });
